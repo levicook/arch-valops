@@ -6,6 +6,7 @@ This guide covers day-to-day operational procedures for managing Arch Network va
 
 ```bash
 # Essential commands for daily operations
+./check-env                                   # Security assessment (run first)
 ./env-init                                    # Deploy/update environment
 ./sync-bins                                   # Sync latest binaries
 sudo -u testnet-validator ./resources/run-validator    # Start validator
@@ -13,18 +14,42 @@ sudo -u testnet-validator ./resources/halt-validator   # Stop validator
 VALIDATOR_USER=testnet-validator ./validator-dashboard # Monitor
 ```
 
+## Security Assessment
+
+Before deploying or operating validators, assess the host security posture:
+
+```bash
+# Run comprehensive security assessment
+./check-env
+```
+
+This tool evaluates SSH security, firewall configuration, intrusion prevention, system updates, user security, network security, system hardening, and file system security. Address any critical issues before proceeding with validator deployment.
+
+**Key Security Checks:**
+- SSH configuration and effective settings
+- Firewall rules and port exposure
+- Intrusion prevention (fail2ban) status
+- System update currency and automation
+- User privilege isolation
+- Network service exposure
+- Kernel security hardening
+- File system permissions
+
 ## Environment Management
 
 ### Initial Deployment
 
 ```bash
-# 1. Deploy validator environment (creates user, directories, scripts)
+# 1. Assess host security (recommended first step)
+./check-env
+
+# 2. Deploy validator environment (creates user, directories, scripts)
 ./env-init
 
-# 2. Sync binaries from development VM
+# 3. Sync binaries from development VM
 ./sync-bins
 
-# 3. Verify deployment
+# 4. Verify deployment
 sudo -u testnet-validator ls -la /home/testnet-validator/
 which arch-cli validator
 ```

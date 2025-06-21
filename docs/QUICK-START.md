@@ -50,10 +50,47 @@ git clone https://github.com/your-org/valops.git
 cd valops
 
 # Make scripts executable
-chmod +x env-init sync-bins validator-dashboard
+chmod +x check-env env-init sync-bins validator-dashboard
 ```
 
-## Step 2: Create Development Environment
+## Step 2: Assess Host Security
+
+Before proceeding with validator setup, assess your host security posture:
+
+```bash
+# Run comprehensive security assessment
+./check-env
+```
+
+**What this checks:**
+- SSH security configuration and effective settings
+- Firewall status and rule configuration
+- Intrusion prevention (fail2ban) setup
+- System update status and automation
+- User security and privilege isolation
+- Network service exposure
+- System hardening (kernel settings, AppArmor)
+- File system security and permissions
+
+**Address any critical issues** identified by the assessment before proceeding. The tool provides specific remediation commands for each issue found.
+
+**Example output:**
+```
+=== VALOPS HOST ENVIRONMENT SECURITY CHECK ===
+
+🔐 SSH SECURITY
+✅ SSH service is active
+✅ Root login disabled
+✅ Password authentication disabled
+ℹ️  SSH running on default port 22
+
+🛡️  FIREWALL SECURITY
+✅ UFW firewall is active
+✅ SSH access rule configured
+✅ Minimal firewall rules (2) - principle of least privilege
+```
+
+## Step 3: Create Development Environment
 
 ```bash
 # Create development VM
@@ -71,7 +108,7 @@ multipass exec dev-env -- bash -c "curl --proto '=https' --tlsv1.2 -sSf https://
 multipass exec dev-env -- bash -c "source ~/.cargo/env && rustup install 1.82.0 && rustup default 1.82.0"
 ```
 
-## Step 3: Build Arch Network Binaries
+## Step 4: Build Arch Network Binaries
 
 ```bash
 # SSH into development VM
@@ -94,7 +131,7 @@ ls -la target/release/{arch-cli,validator}
 exit
 ```
 
-## Step 4: Deploy Validator Environment
+## Step 5: Deploy Validator Environment
 
 ```bash
 # Back on bare metal, deploy validator environment
@@ -122,7 +159,7 @@ common: ✓ Deployed logrotate config for testnet-validator
 common: ✓ Deployed validator operator for testnet-validator
 ```
 
-## Step 5: Sync Binaries from Development VM
+## Step 6: Sync Binaries from Development VM
 
 ```bash
 # Sync binaries from dev-env VM to bare metal
@@ -143,7 +180,7 @@ sync-bins: ✓ Updated validator binary
 sync-bins: ✓ Sync complete!
 ```
 
-## Step 6: Start Your First Validator
+## Step 7: Start Your First Validator
 
 ```bash
 # Start the validator (runs in foreground with logging)
@@ -168,7 +205,7 @@ run-validator: Validator starting...
 sudo -u testnet-validator /home/testnet-validator/halt-validator
 ```
 
-## Step 7: Start Monitoring Dashboard
+## Step 8: Start Monitoring Dashboard
 
 ```bash
 # Start comprehensive monitoring (in a new terminal)
@@ -186,7 +223,7 @@ VALIDATOR_USER=testnet-validator ./validator-dashboard
 - `Ctrl+b + arrows`: Switch panes
 - `Ctrl+b + d`: Detach (keeps running)
 
-## Step 8: Verify Validator Health
+## Step 9: Verify Validator Health
 
 In the monitoring dashboard or a separate terminal:
 

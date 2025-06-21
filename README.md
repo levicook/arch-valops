@@ -13,19 +13,22 @@
 ## Quick Start
 
 ```bash
-# 1. Deploy validator environment
+# 1. Assess host security (recommended first step)
+./check-env
+
+# 2. Deploy validator environment
 ./env-init
 
-# 2. Sync latest binaries from dev VM
+# 3. Sync latest binaries from dev VM
 ./sync-bins
 
-# 3. Start validator
+# 4. Start validator
 sudo -u testnet-validator /home/testnet-validator/run-validator
 
-# 4. Monitor with comprehensive dashboard
+# 5. Monitor with comprehensive dashboard
 VALIDATOR_USER=testnet-validator ./validator-dashboard
 
-# 5. Stop validator
+# 6. Stop validator
 sudo -u testnet-validator /home/testnet-validator/halt-validator
 ```
 
@@ -77,6 +80,7 @@ VALIDATOR_USER=testnet-validator ./validator-dashboard
 
 ```
 valops/
+├── check-env                         # Host security assessment tool
 ├── env-init                          # Environment setup and user management
 ├── sync-bins                         # Binary synchronization from dev VM  
 ├── common.sh                         # Shared utilities library
@@ -96,6 +100,11 @@ valops/
 ```
 
 ## Core Operations
+
+### Security Assessment
+```bash
+./check-env   # Comprehensive host security assessment (run first)
+```
 
 ### Environment Management
 ```bash

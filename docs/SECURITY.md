@@ -141,6 +141,65 @@ The most important security aspect is that **validator signing keys** (the actua
 - Multi-person approval for critical changes
 - Role-based access control
 
+## Host Security Assessment
+
+The `check-env` script provides comprehensive security assessment of the host environment before validator deployment:
+
+```bash
+# Run security assessment (recommended first step)
+./check-env
+```
+
+### Assessment Categories
+
+The security assessment evaluates eight critical areas:
+
+1. **🔐 SSH Security** - Service status, root login, password authentication, port configuration, authentication attempts
+2. **🛡️ Firewall Security** - UFW status, rule configuration, port exposure, principle of least privilege
+3. **🚫 Intrusion Prevention** - fail2ban status, jail configuration, active protection
+4. **📦 System Updates** - Automatic updates, pending security patches, system currency
+5. **👤 User Security** - Sudo privileges, empty passwords, validator user isolation
+6. **🌐 Network Security** - Listening services, insecure protocols, IPv6 configuration
+7. **🔧 System Hardening** - Kernel protections, AppArmor, SUID settings, swap encryption
+8. **📁 File System Security** - Directory permissions, sensitive file access
+
+### Effective Configuration Checking
+
+The assessment tool checks **running/effective configuration** rather than just configuration files:
+
+- Uses `sshd -T` for actual SSH daemon settings
+- Verifies active firewall rules with `ufw status`
+- Checks running services with `systemctl is-active`
+- Validates effective kernel parameters
+
+This approach ensures the assessment reflects actual security posture, not just intended configuration.
+
+### Security Recommendations
+
+The tool provides actionable recommendations for identified issues:
+
+- **Color-coded output**: ✅ Good (green), ⚠️ Warning (yellow), ❌ Bad (red), ℹ️ Info (blue)
+- **Specific commands**: Exact commands to remediate identified issues
+- **Validator-specific guidance**: Recommendations tailored for validator operations
+- **Risk prioritization**: Critical issues highlighted for immediate attention
+
+### Integration with Validator Workflow
+
+Security assessment should be the first step in validator deployment:
+
+```bash
+# 1. Assess host security
+./check-env
+
+# 2. Address any critical issues identified
+# (follow tool recommendations)
+
+# 3. Proceed with validator deployment
+./env-init
+```
+
+Regular security assessments help maintain security posture over time and catch configuration drift.
+
 ## Layered Security Architecture
 
 This layered security approach ensures that validator operations remain secure even if development or deployment infrastructure is compromised.

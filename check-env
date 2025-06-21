@@ -1,0 +1,383 @@
+#!/bin/bash
+#
+# check-env - Host environment security assessment
+#
+# Validates host security posture for validator operations.
+# Provides opinionated security recommendations based on best practices.
+#
+# What it checks:
+# - SSH security configuration
+# - Firewall and intrusion prevention
+# - System updates and patching
+# - User security and permissions
+# - Network security configuration
+# - Basic system hardening
+#
+# Output: Clear good/questionable assessments with recommendations
+#
+set -euo pipefail
+source "$(dirname "$0")/common.sh"
+cd "$PROJECT_ROOT"
+
+# ANSI color codes
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
+# Icons for visual clarity
+GOOD="✅"
+WARN="⚠️ "
+BAD="❌"
+INFO="ℹ️ "
+
+echo -e "${BLUE}=== VALOPS HOST ENVIRONMENT SECURITY CHECK ===${NC}"
+echo -e "${CYAN}Assessing security posture for validator operations${NC}"
+echo
+
+# Helper functions
+log_good() {
+    echo -e "${GREEN}${GOOD} $1${NC}"
+}
+
+log_warn() {
+    echo -e "${YELLOW}${WARN} $1${NC}"
+}
+
+log_bad() {
+    echo -e "${RED}${BAD} $1${NC}"
+}
+
+log_info() {
+    echo -e "${CYAN}${INFO} $1${NC}"
+}
+
+check_command() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+# 1. SSH Security Assessment
+echo -e "${BLUE}🔐 SSH SECURITY${NC}"
+echo "----------------------------------------"
+
+# Check if SSH is running
+if systemctl is-active --quiet ssh; then
+    log_good "SSH service is active"
+else
+    log_bad "SSH service not running"
+fi
+
+# SSH configuration analysis
+SSH_CONFIG=$(sudo sshd -T 2>/dev/null)
+
+# Root login check
+if echo "$SSH_CONFIG" | grep -q "permitrootlogin no"; then
+    log_good "Root login disabled"
+elif echo "$SSH_CONFIG" | grep -q "permitrootlogin prohibit-password"; then
+    log_warn "Root login allowed with keys only (consider disabling entirely)"
+else
+    log_bad "Root login enabled with password - CRITICAL SECURITY RISK"
+    echo "   Recommendation: Set 'PermitRootLogin no' in /etc/ssh/sshd_config"
+fi
+
+# Password authentication check
+if echo "$SSH_CONFIG" | grep -qi "passwordauthentication no"; then
+    log_good "Password authentication disabled (key-only access)"
+else
+    log_warn "Password authentication enabled"
+    echo "   Recommendation: Set 'PasswordAuthentication no' in /etc/ssh/sshd_config"
+fi
+
+# SSH port check
+SSH_PORT=$(echo "$SSH_CONFIG" | grep "^port " | awk '{print $2}')
+if [ "$SSH_PORT" = "22" ]; then
+    log_info "SSH running on default port 22"
+    echo "   Note: Security through obscurity is debatable"
+else
+    log_good "SSH running on non-standard port $SSH_PORT"
+fi
+
+# Max auth tries
+MAX_AUTH=$(echo "$SSH_CONFIG" | grep "^maxauthtries " | awk '{print $2}')
+if [ "$MAX_AUTH" -le 3 ]; then
+    log_good "SSH max auth tries: $MAX_AUTH (good)"
+elif [ "$MAX_AUTH" -le 6 ]; then
+    log_warn "SSH max auth tries: $MAX_AUTH (consider reducing to 3)"
+else
+    log_bad "SSH max auth tries: $MAX_AUTH (too high, reduce to 3)"
+fi
+
+echo
+
+# 2. Firewall Assessment
+echo -e "${BLUE}🛡️  FIREWALL SECURITY${NC}"
+echo "----------------------------------------"
+
+if check_command ufw; then
+    UFW_STATUS=$(sudo ufw status)
+    if echo "$UFW_STATUS" | grep -q "Status: active"; then
+        log_good "UFW firewall is active"
+
+        # Check for SSH rule
+        if echo "$UFW_STATUS" | grep -q "22/tcp.*ALLOW"; then
+            log_good "SSH access rule configured"
+        else
+            log_warn "No explicit SSH rule found (may be using different port)"
+        fi
+
+        # Check for validator ports
+        if echo "$UFW_STATUS" | grep -q "9002"; then
+            log_warn "RPC port 9002 externally accessible"
+            echo "   Review: Ensure this is intentional for external RPC access"
+        else
+            log_good "RPC port 9002 not externally exposed"
+        fi
+
+        # Count total rules
+        RULE_COUNT=$(echo "$UFW_STATUS" | grep -c "ALLOW\|DENY" || echo "0")
+        if [ "$RULE_COUNT" -lt 10 ]; then
+            log_good "Minimal firewall rules ($RULE_COUNT) - principle of least privilege"
+        else
+            log_warn "Many firewall rules ($RULE_COUNT) - review for necessity"
+        fi
+    else
+        log_bad "UFW firewall is not active"
+        echo "   Recommendation: sudo ufw enable"
+    fi
+else
+    log_bad "UFW not installed"
+    echo "   Recommendation: sudo apt install ufw && sudo ufw enable"
+fi
+
+echo
+
+# 3. Intrusion Prevention
+echo -e "${BLUE}🚫 INTRUSION PREVENTION${NC}"
+echo "----------------------------------------"
+
+if check_command fail2ban-client; then
+    if systemctl is-active --quiet fail2ban; then
+        log_good "fail2ban is active"
+
+        # Check jail status
+        JAILS=$(sudo fail2ban-client status 2>/dev/null | grep "Jail list:" | cut -d: -f2 | tr -d ' ')
+        if [ -n "$JAILS" ]; then
+            log_good "Active jails: $JAILS"
+        else
+            log_warn "fail2ban running but no jails configured"
+        fi
+    else
+        log_warn "fail2ban installed but not active"
+        echo "   Recommendation: sudo systemctl enable --now fail2ban"
+    fi
+else
+    log_warn "fail2ban not installed"
+    echo "   Recommendation: sudo apt install fail2ban"
+fi
+
+echo
+
+# 4. System Updates
+echo -e "${BLUE}📦 SYSTEM UPDATES${NC}"
+echo "----------------------------------------"
+
+# Check for unattended-upgrades
+if check_command unattended-upgrade; then
+    if systemctl is-enabled --quiet unattended-upgrades 2>/dev/null; then
+        log_good "Automatic security updates enabled"
+    else
+        log_warn "unattended-upgrades installed but not enabled"
+        echo "   Recommendation: sudo systemctl enable unattended-upgrades"
+    fi
+else
+    log_warn "Automatic updates not configured"
+    echo "   Recommendation: sudo apt install unattended-upgrades"
+fi
+
+# Check for pending updates
+SECURITY_UPDATES=$(apt list --upgradable 2>/dev/null | grep -c "security" || echo "0")
+TOTAL_UPDATES=$(apt list --upgradable 2>/dev/null | wc -l)
+TOTAL_UPDATES=$((TOTAL_UPDATES - 1)) # Remove header line
+
+if [ "$TOTAL_UPDATES" -eq 0 ]; then
+    log_good "System is up to date"
+elif [ "$SECURITY_UPDATES" -gt 0 ]; then
+    log_bad "$SECURITY_UPDATES security updates pending"
+    echo "   Recommendation: sudo apt update && sudo apt upgrade"
+else
+    log_warn "$TOTAL_UPDATES updates available (no security updates)"
+fi
+
+echo
+
+# 5. User Security
+echo -e "${BLUE}👤 USER SECURITY${NC}"
+echo "----------------------------------------"
+
+# Check for users with sudo access
+SUDO_USERS=$(grep -E "^(sudo|admin|wheel)" /etc/group | cut -d: -f4 | tr ',' '\n' | sort -u | tr '\n' ' ')
+if [ -n "$SUDO_USERS" ]; then
+    SUDO_COUNT=$(echo "$SUDO_USERS" | wc -w)
+    if [ "$SUDO_COUNT" -le 2 ]; then
+        log_good "Limited sudo users ($SUDO_COUNT): $SUDO_USERS"
+    else
+        log_warn "Many sudo users ($SUDO_COUNT): $SUDO_USERS"
+        echo "   Review: Ensure all sudo access is necessary"
+    fi
+fi
+
+# Check for empty password accounts
+EMPTY_PASSWORDS=$(sudo awk -F: '($2 == "") {print $1}' /etc/shadow 2>/dev/null | wc -l)
+if [ "$EMPTY_PASSWORDS" -eq 0 ]; then
+    log_good "No accounts with empty passwords"
+else
+    log_bad "$EMPTY_PASSWORDS accounts with empty passwords"
+    echo "   Recommendation: Set passwords or disable accounts"
+fi
+
+# Check validator user isolation
+if id testnet-validator >/dev/null 2>&1; then
+    log_good "Validator user 'testnet-validator' exists"
+
+    # Check if validator user has sudo access
+    if sudo -l -U testnet-validator 2>/dev/null | grep -q "may run"; then
+        log_warn "Validator user has sudo privileges"
+        echo "   Review: Validator user should have minimal privileges"
+    else
+        log_good "Validator user has no sudo privileges"
+    fi
+else
+    log_info "Validator user not yet created (run ./env-init)"
+fi
+
+echo
+
+# 6. Network Security
+echo -e "${BLUE}🌐 NETWORK SECURITY${NC}"
+echo "----------------------------------------"
+
+# Check for listening services
+LISTENING_SERVICES=$(sudo ss -tlnp | grep LISTEN | wc -l)
+if [ "$LISTENING_SERVICES" -lt 10 ]; then
+    log_good "Minimal listening services ($LISTENING_SERVICES)"
+else
+    log_warn "Many listening services ($LISTENING_SERVICES)"
+    echo "   Review: sudo ss -tlnp | grep LISTEN"
+fi
+
+# Check for dangerous services
+if sudo ss -tlnp | grep -q ":23\|:21\|:80\|:8080"; then
+    log_warn "Potentially insecure services detected (telnet/ftp/http)"
+    echo "   Review: sudo ss -tlnp | grep -E ':23|:21|:80|:8080'"
+else
+    log_good "No obviously insecure services detected"
+fi
+
+# Check IPv6 configuration
+if [ -f /proc/net/if_inet6 ] && [ -s /proc/net/if_inet6 ]; then
+    log_info "IPv6 is enabled"
+    echo "   Consider: Disable if not needed (net.ipv6.conf.all.disable_ipv6=1)"
+else
+    log_good "IPv6 is disabled"
+fi
+
+echo
+
+# 7. System Hardening
+echo -e "${BLUE}🔧 SYSTEM HARDENING${NC}"
+echo "----------------------------------------"
+
+# Check kernel parameters
+if sysctl kernel.dmesg_restrict 2>/dev/null | grep -q "= 1"; then
+    log_good "Kernel log access restricted"
+else
+    log_warn "Kernel logs accessible to all users"
+    echo "   Recommendation: echo 'kernel.dmesg_restrict=1' >> /etc/sysctl.conf"
+fi
+
+# Check for core dumps
+if sysctl fs.suid_dumpable 2>/dev/null | grep -q "= 0"; then
+    log_good "SUID core dumps disabled"
+else
+    log_warn "SUID core dumps enabled"
+    echo "   Recommendation: echo 'fs.suid_dumpable=0' >> /etc/sysctl.conf"
+fi
+
+# Check for AppArmor/SELinux
+if check_command aa-status && sudo aa-status >/dev/null 2>&1; then
+    log_good "AppArmor is active"
+elif check_command getenforce && getenforce 2>/dev/null | grep -q Enforcing; then
+    log_good "SELinux is enforcing"
+else
+    log_warn "No mandatory access control (AppArmor/SELinux) detected"
+    echo "   Consider: Installing and configuring AppArmor"
+fi
+
+# Check swap encryption
+if swapon --show 2>/dev/null | grep -q "/dev/dm-"; then
+    log_good "Encrypted swap detected"
+elif swapon --show 2>/dev/null | grep -v "NAME" | wc -l | grep -q "^0$"; then
+    log_info "No swap configured"
+else
+    log_warn "Unencrypted swap in use"
+    echo "   Consider: Encrypted swap for memory protection"
+fi
+
+echo
+
+# 8. File System Security
+echo -e "${BLUE}📁 FILE SYSTEM SECURITY${NC}"
+echo "----------------------------------------"
+
+# Check /tmp permissions
+TMP_PERMS=$(stat -c "%a" /tmp)
+if [ "$TMP_PERMS" = "1777" ]; then
+    log_good "/tmp has correct permissions (1777)"
+else
+    log_warn "/tmp permissions: $TMP_PERMS (expected 1777)"
+fi
+
+# Check for world-writable files (limited scan)
+WORLD_WRITABLE=$(find /etc /usr/bin /usr/sbin -type f -perm -002 2>/dev/null | wc -l)
+if [ "$WORLD_WRITABLE" -eq 0 ]; then
+    log_good "No world-writable system files found"
+else
+    log_warn "$WORLD_WRITABLE world-writable system files found"
+    echo "   Review: find /etc /usr/bin /usr/sbin -type f -perm -002"
+fi
+
+# Check umask
+DEFAULT_UMASK=$(umask)
+if [ "$DEFAULT_UMASK" = "0022" ] || [ "$DEFAULT_UMASK" = "022" ]; then
+    log_good "Secure default umask ($DEFAULT_UMASK)"
+else
+    log_warn "Permissive umask ($DEFAULT_UMASK)"
+    echo "   Recommendation: Set umask 022 in /etc/profile"
+fi
+
+echo
+
+# Summary and recommendations
+echo -e "${BLUE}📋 SECURITY ASSESSMENT SUMMARY${NC}"
+echo "========================================="
+echo
+echo -e "${CYAN}This assessment covers basic host security for validator operations.${NC}"
+echo -e "${CYAN}For production deployments, consider additional measures:${NC}"
+echo
+echo "🔐 Additional Hardening:"
+echo "  • Enable 2FA for all user accounts"
+echo "  • Configure log monitoring (rsyslog/journald)"
+echo "  • Set up intrusion detection (AIDE/Tripwire)"
+echo "  • Regular security audits with lynis/chkrootkit"
+echo "  • Network monitoring and traffic analysis"
+echo
+echo "🏗️  Validator-Specific:"
+echo "  • Use hardware security modules for signing keys"
+echo "  • Isolate validator network traffic"
+echo "  • Regular backup testing and disaster recovery"
+echo "  • Monitor validator-specific metrics"
+echo
+echo -e "${GREEN}Run this check regularly to maintain security posture.${NC}"
+echo -e "${YELLOW}Review and act on any warnings or critical issues above.${NC}"
