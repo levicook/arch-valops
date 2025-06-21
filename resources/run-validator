@@ -1,0 +1,51 @@
+#!/bin/bash
+set -euo pipefail
+
+# Ensure we're running from the user's home directory
+cd "$HOME"
+
+# Configuration with defaults (can be overridden by environment)
+ARCH_DATA_DIR="${ARCH_DATA_DIR:-$HOME/data/.arch_data}"
+ARCH_RPC_BIND_IP="${ARCH_RPC_BIND_IP:-127.0.0.1}"
+ARCH_RPC_BIND_PORT="${ARCH_RPC_BIND_PORT:-9002}"
+ARCH_TITAN_ENDPOINT="${ARCH_TITAN_ENDPOINT:-https://titan-public-http.test.arch.network}"
+ARCH_TITAN_SOCKET_ENDPOINT="${ARCH_TITAN_SOCKET_ENDPOINT:-titan-public-tcp.test.arch.network:3030}"
+ARCH_NETWORK_MODE="${ARCH_NETWORK_MODE:-testnet}"
+
+# Log file for all output
+LOG_FILE="$HOME/logs/validator.log"
+
+# Function to log and echo
+log_echo() {
+    echo "run-validator: $@" | tee -a "$LOG_FILE"
+}
+
+# Verify environment is set up correctly
+if [[ ! -d "$ARCH_DATA_DIR" ]]; then
+    log_echo "ERROR: Data directory $ARCH_DATA_DIR does not exist. Run env-init first."
+    exit 1
+fi
+
+if [[ ! -d "$HOME/logs" ]]; then
+    log_echo "ERROR: Logs directory $HOME/logs does not exist. Run env-init first."
+    exit 1
+fi
+
+# Log startup with configuration
+log_echo "$(date): Starting Arch validator..."
+log_echo "Configuration:"
+log_echo "  Data directory: $ARCH_DATA_DIR"
+log_echo "  RPC bind: $ARCH_RPC_BIND_IP:$ARCH_RPC_BIND_PORT"
+log_echo "  Network mode: $ARCH_NETWORK_MODE"
+log_echo "  Titan endpoint: $ARCH_TITAN_ENDPOINT"
+log_echo "  Titan socket: $ARCH_TITAN_SOCKET_ENDPOINT"
+
+# Start validator
+exec arch-cli validator-start \
+    --network-mode "$ARCH_NETWORK_MODE" \
+    --data-dir "$ARCH_DATA_DIR" \
+    --rpc-bind-ip "$ARCH_RPC_BIND_IP" \
+    --rpc-bind-port "$ARCH_RPC_BIND_PORT" \
+    --titan-endpoint "$ARCH_TITAN_ENDPOINT" \
+    --titan-socket-endpoint "$ARCH_TITAN_SOCKET_ENDPOINT" \
+    "$@" 2>&1 | tee -a "$LOG_FILE"

@@ -1,5 +1,34 @@
 #!/bin/bash
+#
+# sync-bins - Binary synchronization from development VM
+#
+# Synchronizes Arch Network binaries from multipass dev-env VM to bare metal.
+# Uses SCP for reliable transfer and only updates when files change.
+#
+# What it does:
+# - Connects to multipass 'dev-env' VM via SCP
+# - Syncs arch-cli and validator binaries to /usr/local/bin/
+# - Only overwrites files that have changed (efficient)
+#
+# Idempotent: Safe to run multiple times
+# Dependencies: 
+# - Multipass dev-env VM must be running
+# - SSH access to VM configured  
+# - Source binaries must exist in VM
+#
 set -euo pipefail
+source "$(dirname "$0")/common.sh"
+cd "$PROJECT_ROOT"
+
+# Function for consistent output
+log_echo() {
+    echo "sync-bins: $@"
+}
+
+# Function for error output
+log_error() {
+    echo "sync-bins: $@" >&2
+}
 
 VM_NAME="${VM_NAME:-dev-env}"
 VM_IP=$(multipass info "$VM_NAME" | grep IPv4 | awk '{print $2}')
@@ -13,18 +42,18 @@ sync_bin() {
     local temp_dir=$(mktemp -d)
     local temp_file="$temp_dir/$binary_name"
 
-    echo "Syncing $binary_name from $VM_NAME ($VM_IP)..."
+    log_echo "Syncing $binary_name from $VM_NAME ($VM_IP)..."
 
     if scp "ubuntu@$VM_IP:$source_path" "$temp_file"; then
         if ! cmp -s "$temp_file" "$target_path" 2>/dev/null; then
             sudo cp "$temp_file" "$target_path"
             sudo chmod +x "$target_path"
-            echo "✓ Updated $binary_name binary"
+            log_echo "✓ Updated $binary_name binary"
         else
-            echo "✓ $binary_name is up to date"
+            log_echo "✓ $binary_name is up to date"
         fi
     else
-        echo "✗ Failed to transfer $binary_name"
+        log_error "✗ Failed to transfer $binary_name"
         rm -rf "$temp_dir"
         return 1
     fi
@@ -34,7 +63,6 @@ sync_bin() {
 
 # Sync binaries
 sync_bin "/home/ubuntu/arch-network/target/release/arch-cli"
-sync_bin "/home/ubuntu/arch-network/target/release/bootnode"
 sync_bin "/home/ubuntu/arch-network/target/release/validator"
 
-echo "✓ Sync complete!"
+log_echo "✓ Sync complete!"

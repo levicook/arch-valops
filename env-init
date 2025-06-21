@@ -1,17 +1,25 @@
 #!/bin/bash
+#
+# env-init - Validator operator environment setup
+#
+# Sets up and deploys validator operator environment with deploy semantics.
+# Always ensures the system matches the desired state.
+#
+# What it does:
+# - Cleans up legacy 'arch' user (housekeeping)
+# - Creates/updates 'testnet-validator' user  
+# - Ensures proper directory structure
+# - Always deploys latest resources/run-validator script
+#
+# Idempotent: Safe to run multiple times
+# Dependencies: resources/run-validator must exist
+#
 set -euo pipefail
+source "$(dirname "$0")/common.sh"
+cd "$PROJECT_ROOT"
 
-echo "Setting up Arch validator environment..."
+# Cleanup
+clobber_user "arch"
 
-if ! id "arch" &>/dev/null; then
-    echo "Creating arch user..."
-    sudo useradd -r -m -s /bin/bash arch
-    echo "✓ Created arch user"
-else
-    echo "✓ arch user already exists"
-fi
-
-# sudo -u arch mkdir -p /home/arch/{config,data,logs}
-# echo "✓ Created validator directories"
-
-echo "✓ Done!"
+# Deploy a testnet validator operator
+deploy_validator_operator "testnet-validator"
