@@ -1,0 +1,40 @@
+#!/bin/bash
+set -euo pipefail
+
+VM_NAME="${VM_NAME:-dev-env}"
+VM_IP=$(multipass info "$VM_NAME" | grep IPv4 | awk '{print $2}')
+
+# Function to sync a binary from the VM
+sync_bin() {
+    local source_path="$1"
+    local binary_name=$(basename "$source_path")
+    local target_path="/usr/local/bin/$binary_name"
+
+    local temp_dir=$(mktemp -d)
+    local temp_file="$temp_dir/$binary_name"
+
+    echo "Syncing $binary_name from $VM_NAME ($VM_IP)..."
+
+    if scp "ubuntu@$VM_IP:$source_path" "$temp_file"; then
+        if ! cmp -s "$temp_file" "$target_path" 2>/dev/null; then
+            sudo cp "$temp_file" "$target_path"
+            sudo chmod +x "$target_path"
+            echo "✓ Updated $binary_name binary"
+        else
+            echo "✓ $binary_name is up to date"
+        fi
+    else
+        echo "✗ Failed to transfer $binary_name"
+        rm -rf "$temp_dir"
+        return 1
+    fi
+
+    rm -rf "$temp_dir"
+}
+
+# Sync binaries
+sync_bin "/home/ubuntu/arch-network/target/release/arch-cli"
+sync_bin "/home/ubuntu/arch-network/target/release/bootnode"
+sync_bin "/home/ubuntu/arch-network/target/release/validator"
+
+echo "✓ Sync complete!"

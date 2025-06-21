@@ -1,0 +1,17 @@
+#!/bin/bash
+set -euo pipefail
+
+echo "Setting up Arch validator environment..."
+
+if ! id "arch" &>/dev/null; then
+    echo "Creating arch user..."
+    sudo useradd -r -m -s /bin/bash arch
+    echo "✓ Created arch user"
+else
+    echo "✓ arch user already exists"
+fi
+
+# sudo -u arch mkdir -p /home/arch/{config,data,logs}
+# echo "✓ Created validator directories"
+
+echo "✓ Done!"
