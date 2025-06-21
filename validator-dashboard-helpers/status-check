@@ -1,0 +1,153 @@
+#!/bin/bash
+#
+# status-check - Status information script for watch command
+#
+set -euo pipefail
+
+# Source common utilities
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../common.sh"
+
+if [ -z "${VALIDATOR_USER:-}" ]; then
+    echo "status-check: ERROR: VALIDATOR_USER not set"
+    exit 1
+fi
+
+# ANSI color codes
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Gather all validator data using utility functions
+PID=$(get_validator_pid "$VALIDATOR_USER")
+PID_COUNT=$(get_validator_pid_count "$VALIDATOR_USER")
+UPTIME=$(get_validator_uptime "$VALIDATOR_USER" "$PID")
+BLOCK_HEIGHT=$(get_block_height)
+TITAN_STATUS=$(get_titan_connection_status "$VALIDATOR_USER")
+RECENT_SLOT=$(get_recent_slot "$VALIDATOR_USER")
+ERROR_COUNT=$(get_error_count "$VALIDATOR_USER")
+RECENT_ERRORS=$(get_recent_error_count "$VALIDATOR_USER")
+LAST_ERROR=$(get_last_error "$VALIDATOR_USER")
+RESTART_COUNT=$(get_restart_count "$VALIDATOR_USER")
+LAST_RESTART=$(get_last_restart "$VALIDATOR_USER")
+DATA_SIZES=$(get_data_sizes "$VALIDATOR_USER")
+RECENT_LOGS=$(get_recent_log_lines "$VALIDATOR_USER" 2)
+
+# Parse data sizes
+LEDGER_SIZE=$(echo "$DATA_SIZES" | cut -d'|' -f1)
+TOTAL_SIZE=$(echo "$DATA_SIZES" | cut -d'|' -f2)
+
+echo -e "${BLUE}=== ARCH VALIDATOR STATUS $(date) ===${NC}"
+echo
+
+# Process Status with uptime
+echo -e "${BLUE}🔄 PROCESS STATUS:${NC}"
+if [ -n "$PID" ] && [ "$PID_COUNT" -eq 1 ]; then
+    echo -e "  ${GREEN}✅ Validator RUNNING${NC} (PID: $PID, uptime: $UPTIME)"
+elif [ "$PID_COUNT" -gt 1 ]; then
+    echo -e "  ${GREEN}✅ Validator RUNNING${NC} (PID: $PID +$((PID_COUNT - 1)) others, uptime: $UPTIME)"
+else
+    echo -e "  ${RED}❌ Validator STOPPED${NC}"
+fi
+
+# Network Connections
+echo
+echo -e "${BLUE}🌐 NETWORK STATUS:${NC}"
+if is_rpc_listening; then
+    echo -e "  ${GREEN}✅ RPC listening on :9002${NC}"
+else
+    echo -e "  ${RED}❌ RPC port not listening${NC}"
+fi
+
+# Quick RPC health check using working method
+if [ "$BLOCK_HEIGHT" != "unknown" ]; then
+    echo -e "  ${GREEN}✅ RPC responding${NC}"
+else
+    RPC_RESPONSE=$(get_rpc_response "get_block_count")
+    if echo "$RPC_RESPONSE" | jq -e '.error' >/dev/null 2>&1; then
+        ERROR_MSG=$(echo "$RPC_RESPONSE" | jq -r '.error.message' 2>/dev/null || echo "unknown error")
+        echo -e "  ${YELLOW}⚠ RPC error: $ERROR_MSG${NC}"
+    else
+        echo -e "  ${RED}❌ RPC timeout/unreachable${NC}"
+    fi
+fi
+
+# Network Health
+echo
+echo -e "${BLUE}🌐 NETWORK HEALTH:${NC}"
+
+case "$TITAN_STATUS" in
+"connected")
+    echo -e "  ${GREEN}✅ Titan network: connected${NC}"
+    ;;
+"disconnected")
+    echo -e "  ${RED}❌ Titan network: disconnected${NC}"
+    ;;
+*)
+    echo -e "  ${YELLOW}⚠ Titan network: status unknown${NC}"
+    ;;
+esac
+
+# Get local block height
+if [ "$BLOCK_HEIGHT" != "unknown" ] && [ "$BLOCK_HEIGHT" != "null" ]; then
+    echo -e "  ${GREEN}✅ Local block height: $BLOCK_HEIGHT${NC}"
+
+    # Check if block height is progressing (compare with recent log activity)
+    if [ "$RECENT_SLOT" != "unknown" ] && [ "$RECENT_SLOT" != "" ]; then
+        echo -e "  ${GREEN}✅ Recent slot activity: $RECENT_SLOT${NC}"
+    else
+        echo -e "  ${YELLOW}⚠ No recent slot activity${NC}"
+    fi
+else
+    echo -e "  ${RED}❌ Local block height unavailable${NC}"
+fi
+
+# Data Storage
+echo
+echo -e "${BLUE}💾 DATA STATUS:${NC}"
+echo "  Ledger: $LEDGER_SIZE | Total: $TOTAL_SIZE"
+
+# Recent Activity & Error Analysis
+echo
+echo -e "${BLUE}📊 RECENT ACTIVITY:${NC}"
+
+if [ "$ERROR_COUNT" -gt 0 ] && [ -n "$LAST_ERROR" ]; then
+    if [ "$RECENT_ERRORS" != "unknown" ] && [ "$RECENT_ERRORS" -gt 0 ]; then
+        echo -e "  ${YELLOW}⚠ Errors: $ERROR_COUNT total, $RECENT_ERRORS recent${NC}"
+    else
+        echo -e "  ${YELLOW}⚠ Errors: $ERROR_COUNT total${NC}"
+    fi
+    echo "  Last error: $(echo "$LAST_ERROR" | cut -c1-80)..."
+else
+    echo -e "  ${GREEN}✅ No recent errors${NC}"
+fi
+
+# Restart detection
+if [ "$RESTART_COUNT" -gt 1 ]; then
+    if [ "$RESTART_COUNT" -gt 5 ]; then
+        echo -e "  ${YELLOW}⚠ Restarts detected: $RESTART_COUNT (frequent restarts)${NC}"
+    else
+        echo -e "  ${GREEN}✅ Restarts: $RESTART_COUNT (stable)${NC}"
+    fi
+    if [ "$LAST_RESTART" != "unknown" ]; then
+        echo "  Last restart: $LAST_RESTART"
+    fi
+else
+    echo -e "  ${GREEN}✅ Stable run (no restarts detected)${NC}"
+fi
+
+# Last 2 log lines (non-error activity)
+echo "  Latest activity:"
+if [ -n "$RECENT_LOGS" ]; then
+    echo "$RECENT_LOGS" | while read line; do echo "    $line"; done
+else
+    echo "    (no logs available)"
+fi
+
+echo
+echo -e "${BLUE}📋 MONITORING NOTES:${NC}"
+echo "  • Use Ctrl+b + arrow keys to switch panes"
+echo "  • Call 'show-help' from any pane for operational guidance"
+echo "  • Monitor log pane below for real-time validator activity"

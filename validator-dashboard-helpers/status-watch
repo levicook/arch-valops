@@ -1,0 +1,15 @@
+#!/bin/bash
+#
+# status-watch - Continuous validator status monitoring using watch
+#
+set -euo pipefail
+
+if [ -z "${VALIDATOR_USER:-}" ]; then
+    echo "status-watch: ERROR: VALIDATOR_USER not set"
+    exit 1
+fi
+
+# Export for the status-check script
+export VALIDATOR_USER
+
+exec watch -n 5 -t "$(dirname "$0")/status-check"

@@ -384,13 +384,25 @@ curl -s https://titan-public-http.test.arch.network | head -5
 ## Project Structure
 
 ```
-arch-valops/
-├── env-init              # Environment setup and user management
-├── sync-bins             # Binary synchronization from dev VM
-├── common.sh             # Shared utilities library
-└── resources/            # Deployable resources
-    ├── run-validator     # Validator startup script
-    └── halt-validator    # Validator shutdown script
+valops/
+├── env-init                          # Environment setup and user management
+├── sync-bins                         # Binary synchronization from dev VM
+├── common.sh                         # Shared utilities library
+├── validator-dashboard               # Comprehensive monitoring dashboard
+├── validator-dashboard-helpers/      # Dashboard helper scripts
+│   ├── htop-monitor                  # System process monitoring
+│   ├── nethogs-monitor               # Network usage monitoring
+│   ├── show-help                     # Operational guidance
+│   ├── status-check                  # Validator status information
+│   ├── status-watch                  # Continuous status monitoring
+│   └── tail-logs                     # Live log tailing
+├── resources/                        # Deployable resources
+│   ├── run-validator                 # Validator startup script
+│   └── halt-validator                # Validator shutdown script
+└── docs/                             # Detailed documentation
+    ├── MONITORING.md                 # Monitoring and observability guide
+    ├── OPERATIONS.md                 # Day-to-day operational procedures
+    └── API.md                        # Common.sh utility function reference
 ```
 
 ## Quick Start
@@ -405,12 +417,135 @@ arch-valops/
 # 3. Start validator
 sudo -u testnet-validator /home/testnet-validator/run-validator
 
-# 4. Monitor logs (in another terminal)
-tail -f /home/testnet-validator/logs/validator.log
+# 4. Monitor with comprehensive dashboard
+VALIDATOR_USER=testnet-validator ./validator-dashboard
 
 # 5. Stop validator
 sudo -u testnet-validator /home/testnet-validator/halt-validator
 ```
+
+## Documentation
+
+This README provides an architectural overview and development context. For detailed operational guidance, see:
+
+- **[📊 Monitoring Guide](docs/MONITORING.md)** - Comprehensive monitoring, alerting, and observability
+- **[⚙️ Operations Guide](docs/OPERATIONS.md)** - Day-to-day validator management and maintenance
+- **[🔧 API Reference](docs/API.md)** - Complete reference for `common.sh` utility functions
+
+**Quick Links:**
+- New to validator operations? Start with [Operations Guide](docs/OPERATIONS.md)
+- Setting up monitoring? See [Monitoring Guide](docs/MONITORING.md)
+- Need to use utility functions? Check [API Reference](docs/API.md)
+- Troubleshooting issues? Both guides have comprehensive troubleshooting sections
+
+## Validator Monitoring
+
+### Comprehensive Dashboard
+
+The `validator-dashboard` script provides real-time observability through a tmux-based dashboard:
+
+```bash
+# Start monitoring dashboard
+VALIDATOR_USER=testnet-validator ./validator-dashboard
+
+# Monitor different validator users
+VALIDATOR_USER=mainnet-validator ./validator-dashboard
+```
+
+**Dashboard Layout:**
+- **Window 1 (welcome)**: Operational guidance and bash terminal
+- **Window 2 (dashboard)**: Split-pane real-time monitoring
+  - Top: Continuous validator status monitoring (updates every 10 seconds)
+  - Bottom: Live validator logs with real-time updates
+- **Window 3 (ops)**: System monitoring
+  - Top: `htop` - System resources (CPU, memory, processes)
+  - Bottom: `nethogs` - Network usage by process
+
+**Navigation:**
+- `Ctrl+b` then `n`: Switch between windows
+- `Ctrl+b` then arrow keys: Switch between panes
+- `Ctrl+b` then `d`: Detach (keeps running in background)
+- `tmux attach -t {validator-user}-dashboard`: Reattach to existing session
+
+**Status Dashboard Features:**
+- ✅ Process status with PID tracking
+- 🌐 Network connection verification (RPC port 9002)
+- 💾 Data storage metrics (ledger size, total data)
+- 📊 Recent log activity (last 3 lines)
+- 🔗 Quick RPC connectivity test
+- 🕐 Real-time updates every 10 seconds
+
+### Manual Monitoring Commands
+
+```bash
+# Check validator process status
+sudo su - testnet-validator -c "pgrep -f arch-cli && echo 'Running' || echo 'Stopped'"
+
+# Monitor real-time logs
+sudo su - testnet-validator -c "tail -f logs/validator.log"
+
+# Check RPC endpoint health
+curl -X POST -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"ping","params":[],"id":1}' \
+  http://127.0.0.1:9002/
+
+# Monitor data growth
+sudo su - testnet-validator -c "du -sh data/.arch_data/testnet/ledger"
+
+# Check network connections
+sudo ss -tlnp | grep 9002
+
+# Search for errors in logs
+sudo su - testnet-validator -c "grep -i error logs/validator.log | tail -10"
+
+# Monitor Titan connectivity
+sudo su - testnet-validator -c "grep -i titan logs/validator.log | tail -10"
+```
+
+### Monitoring Best Practices
+
+**Session Management:**
+- Use descriptive session names: `{validator-user}-dashboard`
+- Keep monitoring sessions running in background with `Ctrl+b d`
+- Reattach when needed without interrupting monitoring
+
+**Resource Monitoring:**
+- Watch for memory growth in validator process
+- Monitor network usage during sync operations
+- Track disk space growth in data directory
+
+**Log Analysis:**
+- Monitor for ERROR or WARN messages
+- Track Titan connection status
+- Watch for block height progression
+- Monitor RPC endpoint responsiveness
+
+**Alert Indicators:**
+- ❌ Validator process stopped unexpectedly
+- ❌ RPC port not listening
+- ❌ No recent log activity (> 5 minutes)
+- ❌ Titan connection failures
+- ❌ Rapid disk space growth
+
+### Troubleshooting with Monitoring
+
+**Validator Not Starting:**
+1. Check status dashboard for process state
+2. Review recent logs in real-time pane
+3. Switch to ops terminal and run diagnostics
+4. Use log analysis window for error searching
+
+**Performance Issues:**
+1. Monitor CPU/memory usage in htop pane
+2. Check network usage in nethogs pane
+3. Track data directory growth rates
+4. Monitor RPC response times
+
+**Network Connectivity:**
+1. Watch Titan connection messages in logs
+2. Monitor network usage patterns
+3. Test RPC endpoint responsiveness
+4. Check for connection timeouts or errors
 
 ## Development Workflow
 
@@ -445,6 +580,37 @@ tail -f /home/testnet-validator/logs/validator.log
 ```
 
 ## Script Contracts
+
+### `validator-dashboard`
+**Purpose**: Comprehensive real-time validator monitoring dashboard
+
+**What it does**:
+- Creates tmux session with multi-window monitoring layout
+- Window 1: Operational guidance and interactive terminal
+- Window 2: Split-pane status monitoring and live logs
+- Window 3: Split-pane system monitoring (htop/nethogs)
+- Uses modular helper scripts for each monitoring function
+- Updates validator status continuously with comprehensive health checks
+
+**Environment Variables**:
+- `VALIDATOR_USER`: Validator user to monitor (required, no default)
+
+**Session Management**:
+- Session name: `{VALIDATOR_USER}-dashboard`
+- Safe to run multiple instances for different validators
+- Detach/reattach capability for persistent monitoring
+- Robust pane management with title-based references
+
+**Dependencies**: tmux, htop, nethogs, jq, curl, sudo access to validator user
+**Output**: Creates interactive tmux session with real-time monitoring
+
+**Helper Scripts**:
+- `status-watch`: Continuous status monitoring with `watch`
+- `status-check`: Detailed validator status with network health
+- `tail-logs`: Live log tailing
+- `htop-monitor`: System process monitoring
+- `nethogs-monitor`: Network usage monitoring
+- `show-help`: Operational guidance for professional operators
 
 ### `env-init`
 **Purpose**: Set up validator operator environment with deploy semantics
@@ -513,6 +679,41 @@ tail -f /home/testnet-validator/logs/validator.log
 - Maximum 25-second shutdown time (vs 30+ seconds for manual kill)
 
 **Output**: Prefixed with `halt-validator:` in logs
+
+### `common.sh`
+**Purpose**: Shared utility library with validator inspection functions
+
+**What it provides**:
+- Infrastructure deployment functions (user management, resource deployment)
+- Validator inspection utilities (process status, network health, log analysis)
+- Reusable functions for both scripts and interactive sessions
+- Consistent error handling and logging patterns
+
+**Key Utility Functions**:
+- `get_validator_pid()`, `is_validator_running()`: Process management
+- `get_block_height()`, `is_rpc_listening()`: Network connectivity
+- `get_titan_connection_status()`, `get_recent_slot()`: Network health
+- `get_error_count()`, `get_recent_error_count()`: Error analysis
+- `get_data_sizes()`, `get_recent_log_lines()`: System information
+
+**Usage Patterns**:
+```bash
+# In scripts (automatic sourcing)
+./validator-dashboard  # Sources common.sh automatically
+
+# Interactive sessions (manual sourcing)
+source common.sh
+export VALIDATOR_USER=testnet-validator
+echo "Block height: $(get_block_height)"
+echo "Validator running: $(is_validator_running "$VALIDATOR_USER" && echo yes || echo no)"
+```
+
+**Design Philosophy**:
+- **Behavior vs Display**: Utility functions return raw data, display logic handled separately
+- **Reusability**: Functions work in scripts, interactive sessions, and other tools
+- **Consistency**: All functions follow same error handling and output patterns
+
+**See**: `docs/API.md` for complete function reference
 
 ## Log Management
 

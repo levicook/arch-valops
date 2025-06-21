@@ -1,0 +1,12 @@
+#!/bin/bash
+#
+# tail-logs - Display live validator logs
+#
+set -euo pipefail
+
+if [ -z "${VALIDATOR_USER:-}" ]; then
+    echo "tail-logs: ERROR: VALIDATOR_USER not set"
+    exit 1
+fi
+
+exec sudo su - "$VALIDATOR_USER" -c "tail -f logs/validator.log"

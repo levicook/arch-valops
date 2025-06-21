@@ -1,0 +1,169 @@
+#!/bin/bash
+#
+# validator-dashboard - Validator monitoring dashboard
+# Creates a tmux session with comprehensive observability
+#
+# Usage: VALIDATOR_USER=testnet-validator ./validator-dashboard
+#
+# Environment variables:
+#   VALIDATOR_USER - Validator user to monitor
+#
+set -euo pipefail
+source "$(dirname "$0")/common.sh"
+cd "$PROJECT_ROOT"
+
+if [ -z "$VALIDATOR_USER" ]; then
+    echo "validator-dashboard: VALIDATOR_USER is not set. Please set the VALIDATOR_USER environment variable."
+    echo "validator-dashboard: Usage: VALIDATOR_USER=testnet-validator ./validator-dashboard"
+    exit 1
+fi
+
+SESSION_NAME="$VALIDATOR_USER-dashboard"
+HELPERS_DIR="$PROJECT_ROOT/validator-dashboard-helpers"
+
+# Tmux utility functions - name-based approach
+session_exists() {
+    local session="$1"
+    tmux has-session -t "$session" 2>/dev/null
+}
+
+window_exists() {
+    local session="$1"
+    local window="$2"
+    tmux list-windows -t "$session" 2>/dev/null | grep -q "^[0-9]*: $window"
+}
+
+find_or_create_session() {
+    local session="$1"
+    if ! session_exists "$session"; then
+        echo "validator-dashboard: Creating session: $session"
+        tmux new-session -d -s "$session"
+        # Wait briefly for session to be ready
+        local count=0
+        while ! session_exists "$session" && [ $count -lt 50 ]; do
+            sleep 0.1
+            count=$((count + 1))
+        done
+        if ! session_exists "$session"; then
+            echo "validator-dashboard: ERROR: Failed to create session $session"
+            exit 1
+        fi
+    else
+        echo "validator-dashboard: Session $session already exists"
+    fi
+}
+
+find_or_create_window() {
+    local session="$1"
+    local window="$2"
+    if ! window_exists "$session" "$window"; then
+        echo "validator-dashboard: Creating window: $window"
+        tmux new-window -t "$session" -n "$window"
+        # Wait briefly for window to be ready
+        local count=0
+        while ! window_exists "$session" "$window" && [ $count -lt 50 ]; do
+            sleep 0.1
+            count=$((count + 1))
+        done
+        if ! window_exists "$session" "$window"; then
+            echo "validator-dashboard: ERROR: Failed to create window $window"
+            exit 1
+        fi
+    else
+        echo "validator-dashboard: Window $window already exists"
+    fi
+}
+
+get_pane_id_by_title() {
+    local session="$1"
+    local window="$2"
+    local title="$3"
+    tmux list-panes -t "$session:$window" -F "#{pane_id} #{pane_title}" 2>/dev/null |
+        grep "$title" | cut -d' ' -f1 || echo ""
+}
+
+find_or_create_pane() {
+    local session="$1"
+    local window="$2"
+    local title="$3"
+    local command="$4"
+    local split_direction="${5:-auto}" # Optional 5th parameter for split direction
+
+    local existing_pane=$(get_pane_id_by_title "$session" "$window" "$title")
+    if [ -n "$existing_pane" ]; then
+        echo "validator-dashboard: Pane '$title' already exists: $existing_pane"
+        return 0
+    fi
+
+    echo "validator-dashboard: Creating pane: $title"
+    # Split the window to create a new pane
+    case "$split_direction" in
+    "h" | "horizontal")
+        tmux split-window -t "$session:$window" -h
+        ;;
+    "v" | "vertical")
+        tmux split-window -t "$session:$window" -v
+        ;;
+    *)
+        # Auto-detect: try horizontal first, then vertical
+        if ! tmux split-window -t "$session:$window" -h 2>/dev/null; then
+            tmux split-window -t "$session:$window" -v
+        fi
+        ;;
+    esac
+
+    # Set the title and run the command
+    tmux select-pane -t "$session:$window" -T "$title"
+    if [ -n "$command" ]; then
+        tmux send-keys -t "$session:$window" "$command" Enter
+    fi
+    echo "validator-dashboard: Created pane '$title'"
+}
+
+# Check if session already exists
+if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
+    echo "validator-dashboard: Session '$SESSION_NAME' already exists. Attaching..."
+    exec tmux attach-session -t "$SESSION_NAME"
+fi
+
+echo "validator-dashboard: Creating comprehensive validator monitoring dashboard..."
+echo "validator-dashboard: Monitoring validator user: $VALIDATOR_USER"
+
+# Create session using name-based approach
+find_or_create_session "$SESSION_NAME"
+
+# Rename the default first window to "welcome" and set it up
+tmux rename-window -t "$SESSION_NAME:1" "welcome"
+tmux send-keys -t "$SESSION_NAME:welcome" "$HELPERS_DIR/show-help" Enter
+
+# Create dashboard window
+find_or_create_window "$SESSION_NAME" "dashboard"
+
+# Set up the main pane with status monitoring (first pane gets created automatically)
+echo "validator-dashboard: Setting up validator status pane..."
+tmux select-pane -t "$SESSION_NAME:dashboard" -T "status"
+tmux send-keys -t "$SESSION_NAME:dashboard" "VALIDATOR_USER=$VALIDATOR_USER $HELPERS_DIR/status-watch" Enter
+
+# Create the logs pane (split vertically to get horizontal layout)
+echo "validator-dashboard: Creating logs pane..."
+find_or_create_pane "$SESSION_NAME" "dashboard" "logs" "VALIDATOR_USER=$VALIDATOR_USER $HELPERS_DIR/tail-logs" "v"
+
+# Create operations window with system monitoring
+find_or_create_window "$SESSION_NAME" "ops"
+tmux select-pane -t "$SESSION_NAME:ops" -T "htop"
+tmux send-keys -t "$SESSION_NAME:ops" "$HELPERS_DIR/htop-monitor" Enter
+
+# Create network monitoring pane in ops window
+echo "validator-dashboard: Creating network monitoring pane..."
+find_or_create_pane "$SESSION_NAME" "ops" "nethogs" "$HELPERS_DIR/nethogs-monitor" "v"
+
+# Go back to dashboard window and focus on logs pane
+echo "validator-dashboard: Setting focus to logs pane..."
+tmux select-window -t "$SESSION_NAME:dashboard"
+logs_pane=$(get_pane_id_by_title "$SESSION_NAME" "dashboard" "logs")
+if [ -n "$logs_pane" ]; then
+    tmux select-pane -t "$logs_pane"
+fi
+
+# Attach to the session
+exec tmux attach-session -t "$SESSION_NAME:1"

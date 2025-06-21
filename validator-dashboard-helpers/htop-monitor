@@ -1,0 +1,5 @@
+#!/bin/bash
+#
+# htop-monitor - System process monitoring
+#
+exec htop

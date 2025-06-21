@@ -1,0 +1,5 @@
+#!/bin/bash
+#
+# nethogs-monitor - Network usage monitoring
+#
+exec sudo nethogs

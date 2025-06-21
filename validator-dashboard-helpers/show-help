@@ -1,0 +1,64 @@
+#!/bin/bash
+#
+# show-help - Operational guidance for validator monitoring
+#
+set -euo pipefail
+
+# ANSI color codes
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
+clear
+echo -e "${BLUE}=== ARCH VALIDATOR MONITORING GUIDE ===${NC}"
+echo
+echo -e "${CYAN}📊 DASHBOARD LAYOUT:${NC}"
+echo "  • Status Pane: Real-time validator health & metrics"
+echo "  • Logs Pane: Live validator activity stream"
+echo "  • Ops Window: System monitoring (htop + nethogs)"
+echo
+echo -e "${CYAN}🎯 MONITORING PRACTICES:${NC}"
+echo "  • Watch for process uptime stability (frequent restarts = problem)"
+echo "  • Monitor RPC health - should always be responding"
+echo "  • Track error patterns in logs (occasional OK, frequent = investigate)"
+echo "  • Observe network activity for sync/connectivity issues"
+echo "  • Check data growth patterns (ledger should grow steadily)"
+echo
+echo -e "${CYAN}🚨 ALERT CONDITIONS:${NC}"
+echo -e "  • ${YELLOW}Process stopped${NC} - immediate restart needed"
+echo -e "  • ${YELLOW}RPC not responding${NC} - validator unreachable"
+echo -e "  • ${YELLOW}High error rate${NC} - investigate logs for patterns"
+echo -e "  • ${YELLOW}No recent log activity${NC} - validator may be stuck"
+echo -e "  • ${YELLOW}Excessive memory/CPU${NC} - check system monitoring"
+echo
+echo -e "${CYAN}⚡ COMMON OPERATIONS:${NC}"
+echo "  • Restart validator: switch to validator user, run ./halt-validator then ./run-validator"
+echo "  • Update binaries: exit dashboard, run ./sync-bins, restart validator"
+echo "  • Redeploy environment: exit dashboard, run ./env-init"
+echo "  • Check detailed logs: sudo su - \$VALIDATOR_USER, then grep/tail logs/"
+echo
+echo -e "${CYAN}🔧 TMUX NAVIGATION:${NC}"
+echo "  • Ctrl+b + arrow keys: switch between panes"
+echo "  • Ctrl+b + n: next window"
+echo "  • Ctrl+b + p: previous window"
+echo "  • Ctrl+b + d: detach (keeps running)"
+echo "  • tmux attach -t \$SESSION_NAME: reattach"
+echo
+echo -e "${CYAN}📋 OPERATIONAL NOTES:${NC}"
+echo "  • This dashboard is read-only monitoring - use separate terminals for operations"
+echo "  • Status refreshes every 5 seconds automatically"
+echo "  • Log pane shows real-time activity - watch for patterns"
+echo "  • System monitoring helps correlate validator issues with resource constraints"
+echo
+echo -e "${GREEN}Press any key to continue to bash terminal...${NC}"
+read -n 1 -s
+
+echo
+echo -e "${BLUE}=== BASH TERMINAL ===${NC}"
+echo "You can now run commands, call scripts, or type 'show-help' to see guidance again."
+echo
+
+# Start an interactive bash shell
+exec /bin/bash
