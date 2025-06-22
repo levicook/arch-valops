@@ -4,6 +4,7 @@
 
 ## Key Features
 
+- 🔐 **Encrypted Identity Management** - Secure peer identity lifecycle with automatic backup/restore
 - 🔒 **Security-First Architecture** - Complete isolation of signing keys from development infrastructure
 - 📊 **Real-Time Monitoring** - Comprehensive tmux dashboard with process, network, and log monitoring  
 - 🚀 **Hybrid Development Model** - Build in VMs, deploy on bare metal for optimal performance
@@ -46,6 +47,40 @@ This toolkit implements a **hybrid development model** that separates build and 
 
 The architecture ensures that even complete compromise of development infrastructure cannot access validator funds or signing keys.
 
+## Identity Management
+
+**Problem**: Validator peer identities are critical single points of failure. Loss of the `identity-secret` file means permanent loss of the validator. Traditional approaches rely on manual backup/restore processes that are error-prone.
+
+**Solution**: Pragmatic encrypted identity lifecycle management that treats peer identity as a protected asset.
+
+### How It Works
+
+```bash
+# Identity is automatically backed up during initialization
+./validator-init --encrypted-identity-key validator-identity.age --network testnet --user testnet-validator
+# → Creates ~/.valops/age/identity-backup-{peer-id}.age
+
+# Manual backup of all identities (testnet, mainnet, devnet)
+./backup-identities --user testnet-validator
+
+# Restore from backup (same process as original deployment)
+./validator-init --encrypted-identity-key ~/.valops/age/identity-backup-{peer-id}.age --network testnet --user new-validator
+
+# Destructive operations create emergency backups automatically
+./validator-down --clobber --user testnet-validator
+# → Creates backup first, refuses to proceed if backup fails
+```
+
+### Protection Mechanisms
+
+- **Automatic Backup**: Every validator initialization creates encrypted backup
+- **Emergency Protection**: Destructive operations backup identity before proceeding  
+- **Fail-Safe Logic**: Operations refuse to continue if backup creation fails
+- **Host Migration**: Identity backups work seamlessly across different hosts
+- **Encryption**: All backups encrypted with host age keys, never stored in plaintext
+
+**Result**: Validator identity survives host migration, hardware failure, and operator error.
+
 ## Documentation
 
 ### 🚀 Getting Started
@@ -86,6 +121,7 @@ VALIDATOR_USER=testnet-validator ./validator-dashboard
 valops/
 ├── check-env                         # Host security assessment tool
 ├── setup-age-keys                    # Age encryption keypair setup
+├── backup-identities                 # Backup all validator identities
 ├── validator-init                    # One-time validator initialization
 ├── validator-up                      # Start validator process
 ├── validator-down                    # Stop validator process
@@ -125,13 +161,16 @@ valops/
 # Initialize validator with encrypted identity (one-time)
 ./validator-init --encrypted-identity-key validator-identity.age --network testnet --user testnet-validator
 
+# Backup all validator identities
+./backup-identities --user testnet-validator
+
 # Start validator
 ./validator-up --user testnet-validator
 
 # Stop validator (graceful shutdown)  
 ./validator-down --user testnet-validator
 
-# Complete removal (stop + remove all validator data)
+# Complete removal (stop + remove all validator data, auto-backup first)
 ./validator-down --clobber --user testnet-validator
 
 # Monitor real-time
