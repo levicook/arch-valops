@@ -7,7 +7,7 @@
 #   validator-down --clobber [--user <username>] # Stop and completely remove validator setup
 #
 set -euo pipefail
-source "$(dirname "$0")/common.sh"
+source "$(dirname "$0")/lib.sh"
 cd "$PROJECT_ROOT"
 
 # Default values

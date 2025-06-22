@@ -16,7 +16,7 @@
 # Output: Clear good/questionable assessments with recommendations
 #
 set -euo pipefail
-source "$(dirname "$0")/common.sh"
+source "$(dirname "$0")/lib.sh"
 cd "$PROJECT_ROOT"
 
 # ANSI color codes

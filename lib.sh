@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# common.sh - Shared utilities for Arch Network validator operations
+# lib.sh - Shared utilities for Arch Network validator operations
 #
 # This library provides idempotent functions for managing validator infrastructure:
 # - User management (create/remove users safely)
@@ -22,11 +22,11 @@
 
 # Consistent output functions
 log_echo() {
-    echo "common: $@"
+    echo "lib: $@"
 }
 
 log_error() {
-    echo "common: $@" >&2
+    echo "lib: $@" >&2
 }
 
 # Stop validator process
@@ -238,8 +238,8 @@ git_root() {
 }
 
 project_root() {
-    local common_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    echo "$common_dir"
+    local lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    echo "$lib_dir"
 }
 
 export PROJECT_ROOT="$(project_root)"

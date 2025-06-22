@@ -10,7 +10,7 @@ The source-friendly design enables comprehensive testing without affecting produ
 
 ```bash
 # 1. Source the library for interactive use
-source common.sh
+source lib.sh
 
 # 2. Test individual functions safely
 create_user "dev-test"
@@ -93,7 +93,7 @@ grep "Configuration:" /home/testnet-validator/logs/validator.log | tail -1
 
 ```bash
 # Check validator status
-source common.sh
+source lib.sh
 is_validator_running "testnet-validator" && echo "Running" || echo "Stopped"
 get_validator_pid "testnet-validator"
 
@@ -104,8 +104,8 @@ get_validator_pid "testnet-validator"
 ### Environment Validation
 
 ```bash
-# Source common.sh for diagnostic functions
-source common.sh
+# Source lib.sh for diagnostic functions
+source lib.sh
 
 # Check user and directory state
 id testnet-validator
@@ -121,11 +121,11 @@ curl -s https://titan-public-http.test.arch.network | head -5
 
 ## Interactive Development
 
-### Using common.sh for Development
+### Using lib.sh for Development
 
 ```bash
 # Interactive testing of individual functions
-ubuntu@server:~/valops$ source common.sh
+ubuntu@server:~/valops$ source lib.sh
 
 ubuntu@server:~/valops$ create_user "test-validator"
 common: Creating test-validator user...
@@ -180,7 +180,7 @@ common: ✓ Removed test-validator user
 #### Validator won't stop
 **Problem**: Shutdown issues
 **Solutions**:
-- Check process status: `source common.sh && is_validator_running "testnet-validator"`
+- Check process status: `source lib.sh && is_validator_running "testnet-validator"`
 - Try manual shutdown: `./validator-down --user testnet-validator`
 - Check logs for shutdown details: `grep "validator-down:" /home/testnet-validator/logs/validator.log`
 
@@ -244,7 +244,7 @@ chmod +x setup-age-keys validator-init validator-up validator-down sync-bins val
 
 ```bash
 # Test user management functions
-source common.sh
+source lib.sh
 create_user "test-user"
 init_validator_operator "test-user" "testnet" "test-identity.age"
 clobber_validator_operator "test-user"
@@ -272,7 +272,7 @@ VALIDATOR_USER=testnet-validator ./validator-dashboard
 
 ```bash
 # Test with different validator users
-source common.sh
+source lib.sh
 init_validator_operator "mainnet-validator" "mainnet" "mainnet-identity.age"
 VALIDATOR_USER=mainnet-validator ./validator-dashboard
 
@@ -291,7 +291,7 @@ VALIDATOR_USER=mainnet-validator ./validator-dashboard
 set -euo pipefail
 
 # Source common utilities
-source "$(dirname "$0")/common.sh"
+source "$(dirname "$0")/lib.sh"
 
 # Use consistent output formatting
 log_echo() {
@@ -407,7 +407,7 @@ iotop  # Disk I/O
 nethogs  # Network usage
 
 # Profile specific functions
-source common.sh
+source lib.sh
 time get_validator_pid "testnet-validator"
 time get_block_height
 ```

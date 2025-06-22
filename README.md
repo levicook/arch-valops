@@ -55,7 +55,7 @@ The architecture ensures that even complete compromise of development infrastruc
 
 ### 📊 Monitoring & Operations  
 - **[Monitoring Guide](docs/MONITORING.md)** - Comprehensive monitoring, alerting, and observability
-- **[API Reference](docs/API.md)** - Complete reference for `common.sh` utility functions
+- **[API Reference](docs/API.md)** - Complete reference for `lib.sh` utility functions
 
 ### 🏗️ Architecture & Development
 - **[Architecture Guide](docs/ARCHITECTURE.md)** - Detailed development architecture and workflow
@@ -90,7 +90,7 @@ valops/
 ├── validator-up                      # Start validator process
 ├── validator-down                    # Stop validator process
 ├── sync-bins                         # Binary synchronization from dev VM  
-├── common.sh                         # Shared utilities library
+├── lib.sh                            # Shared utilities library
 ├── validator-dashboard               # Comprehensive monitoring dashboard
 ├── validator-dashboard-helpers/      # Modular dashboard components
 ├── resources/                        # Deployable validator scripts

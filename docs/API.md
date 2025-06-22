@@ -1,12 +1,12 @@
-# Common.sh API Reference
+# lib.sh API Reference
 
-This document provides a complete reference for the utility functions available in `common.sh`.
+This document provides a complete reference for the utility functions available in `lib.sh`.
 
 ## Usage
 
 ```bash
 # Source the library
-source common.sh
+source lib.sh
 
 # Set required environment variable
 export VALIDATOR_USER=testnet-validator
@@ -375,7 +375,7 @@ All utility functions follow consistent error handling patterns:
 
 ### Custom Health Check Function
 ```bash
-source common.sh
+source lib.sh
 
 validator_health_summary() {
     local user="$1"
@@ -394,7 +394,7 @@ validator_health_summary "testnet-validator"
 
 ### Monitoring Loop
 ```bash
-source common.sh
+source lib.sh
 export VALIDATOR_USER=testnet-validator
 
 while true; do
@@ -408,7 +408,7 @@ done
 
 ### Alert Conditions
 ```bash
-source common.sh
+source lib.sh
 
 check_alert_conditions() {
     local user="$1"

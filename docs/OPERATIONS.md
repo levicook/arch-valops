@@ -102,7 +102,7 @@ sudo -u testnet-validator ls -la /home/testnet-validator/{run-validator,halt-val
 **Startup Verification:**
 ```bash
 # Check process status
-source common.sh
+source lib.sh
 is_validator_running "testnet-validator" && echo "Running" || echo "Stopped"
 
 # Get process details
@@ -135,7 +135,7 @@ sudo su - testnet-validator -c "pkill -TERM -f '^validator --network-mode'"
 **Shutdown Verification:**
 ```bash
 # Verify all processes stopped
-source common.sh
+source lib.sh
 is_validator_running "testnet-validator" || echo "All stopped"
 
 # Check RPC endpoint is down
@@ -156,7 +156,7 @@ curl -X POST -H "Content-Type: application/json" \
 **Quick Status Check:**
 ```bash
 # Check if restart is needed
-source common.sh
+source lib.sh
 if is_validator_running "testnet-validator"; then
     echo "Validator is running"
 else
@@ -383,7 +383,7 @@ sudo sysctl -p
 
 **Monitor Validator Metrics:**
 ```bash
-source common.sh
+source lib.sh
 
 # Check processing performance
 echo "Block height: $(get_block_height)"
@@ -467,7 +467,7 @@ sudo netstat -tulnp | grep -E "(9002|3030)"
 **Health Check (2 minutes):**
 ```bash
 # Quick status check
-source common.sh
+source lib.sh
 ./validator-dashboard-helpers/status-check
 
 # Verify key metrics
@@ -511,7 +511,7 @@ du -sh /home/testnet-validator/data/.arch_data/testnet/ledger
 grep ERROR /home/testnet-validator/logs/validator.log* | wc -l
 
 # Check restart frequency
-source common.sh
+source lib.sh
 echo "Restarts: $(get_restart_count "testnet-validator")"
 ```
 
@@ -525,7 +525,7 @@ free -h  # Memory usage
 uptime  # System load
 
 # Validator-specific checks
-source common.sh
+source lib.sh
 echo "Restarts: $(get_restart_count "testnet-validator")"
 echo "Total errors: $(get_error_count "testnet-validator")"
 echo "Data size: $(get_data_sizes "testnet-validator")"
@@ -558,7 +558,7 @@ mkdir -p "$BACKUP_DIR"
 
 # Copy configuration and scripts
 cp -r resources/ "$BACKUP_DIR/"
-cp common.sh setup-age-keys validator-init validator-up validator-down sync-bins validator-dashboard "$BACKUP_DIR/"
+cp lib.sh setup-age-keys validator-init validator-up validator-down sync-bins validator-dashboard "$BACKUP_DIR/"
 
 # Copy validator-specific configuration
 sudo cp -r /home/testnet-validator/{run-validator,halt-validator} "$BACKUP_DIR/" 2>/dev/null || true
@@ -635,7 +635,7 @@ validator --version 2>/dev/null || echo "Binary issue"
 **Symptoms:** High CPU, memory, or disk usage
 ```bash
 # Monitor resource usage
-source common.sh
+source lib.sh
 htop -u testnet-validator
 
 # Check validator metrics
@@ -654,7 +654,7 @@ echo "Data size: $(get_data_sizes "testnet-validator")"
 **Symptoms:** RPC not responding, network connection errors
 ```bash
 # Check network status
-source common.sh
+source lib.sh
 is_rpc_listening && echo "RPC OK" || echo "RPC DOWN"
 echo "Titan status: $(get_titan_connection_status "testnet-validator")"
 
@@ -687,11 +687,11 @@ ls -la ~/.valops/age/
 
 ## Interactive Operations
 
-### Using common.sh Functions
+### Using lib.sh Functions
 
 ```bash
 # Source the library for interactive use
-source common.sh
+source lib.sh
 
 # Check validator status
 is_validator_running "testnet-validator" && echo "Running" || echo "Stopped"
@@ -720,7 +720,7 @@ for user in testnet-validator mainnet-validator; do
 done
 
 # Bulk operations
-source common.sh
+source lib.sh
 ./validator-down --user testnet-validator
 ./validator-up --user testnet-validator
 ```

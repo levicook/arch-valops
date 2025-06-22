@@ -128,14 +128,14 @@ make clean-ebpf       # Clean only eBPF programs
 
 ## Source-Friendly Library Design
 
-The `common.sh` library is designed for both operational use and testing/maintenance:
+The `lib.sh` library is designed for both operational use and testing/maintenance:
 
 ```bash
 # Production usage (automatic sourcing)
-./validator-init  # Sources common.sh automatically for initialization
+./validator-init  # Sources lib.sh automatically for initialization
 
 # Testing/maintenance usage (manual sourcing)
-source common.sh
+source lib.sh
 deploy_validator_operator "test-user"    # Test individual functions
 clobber_user "test-user"                 # Clean up test resources
 ```
@@ -143,7 +143,7 @@ clobber_user "test-user"                 # Clean up test resources
 **Testing workflow:**
 ```bash
 # Interactive testing of individual functions
-ubuntu@server:~/valops$ source common.sh
+ubuntu@server:~/valops$ source lib.sh
 
 ubuntu@server:~/valops$ create_user "test-validator"
 common: Creating test-validator user...
@@ -197,7 +197,7 @@ common: ✓ Removed test-validator user
 ./validator-down --user testnet-validator
 
 # Check status
-source common.sh
+source lib.sh
 is_validator_running "testnet-validator" && echo "Running" || echo "Stopped"
 
 # Monitor logs
@@ -341,7 +341,7 @@ tail -f /home/testnet-validator/logs/validator.log
 
 ## Utility Library Architecture
 
-### `common.sh`
+### `lib.sh`
 **Purpose**: Shared utility library with validator inspection functions
 
 **What it provides**:
@@ -360,10 +360,10 @@ tail -f /home/testnet-validator/logs/validator.log
 **Usage Patterns**:
 ```bash
 # In scripts (automatic sourcing)
-./validator-dashboard  # Sources common.sh automatically
+./validator-dashboard  # Sources lib.sh automatically
 
 # Interactive sessions (manual sourcing)
-source common.sh
+source lib.sh
 export VALIDATOR_USER=testnet-validator
 echo "Block height: $(get_block_height)"
 echo "Validator running: $(is_validator_running "$VALIDATOR_USER" && echo yes || echo no)"
@@ -411,7 +411,7 @@ Every action is logged with timestamps, configuration details, and clear status 
 ### Clear Separation of Concerns
 - **IaC scripts** (root level): Manage infrastructure and sync binaries
 - **Resources** (resources/): Deployable operational scripts
-- **Libraries** (common.sh): Shared utilities with consistent interfaces
+- **Libraries** (lib.sh): Shared utilities with consistent interfaces
 - **Helpers** (validator-dashboard-helpers/): Modular monitoring components
 
 ## Production Features

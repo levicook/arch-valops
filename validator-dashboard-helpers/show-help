@@ -3,7 +3,7 @@
 # show-help - Operational guidance for validator monitoring
 #
 set -euo pipefail
-source "$(dirname "$0")/../common.sh"
+source "$(dirname "$0")/../lib.sh"
 cd "$PROJECT_ROOT"
 
 # ANSI color codes

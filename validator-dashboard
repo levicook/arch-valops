@@ -9,7 +9,7 @@
 #   VALIDATOR_USER - Validator user to monitor
 #
 set -euo pipefail
-source "$(dirname "$0")/common.sh"
+source "$(dirname "$0")/lib.sh"
 cd "$PROJECT_ROOT"
 
 if [ -z "$VALIDATOR_USER" ]; then

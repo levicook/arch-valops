@@ -9,7 +9,7 @@ This guide covers comprehensive monitoring and observability for Arch Network va
 VALIDATOR_USER=testnet-validator ./validator-dashboard
 
 # Check validator status quickly
-source common.sh
+source lib.sh
 export VALIDATOR_USER=testnet-validator
 ./validator-dashboard-helpers/status-check
 ```
@@ -106,7 +106,7 @@ The status monitor provides comprehensive health information with color-coded in
 ### Quick Health Check
 
 ```bash
-source common.sh
+source lib.sh
 export VALIDATOR_USER=testnet-validator
 
 # Basic health indicators
@@ -123,7 +123,7 @@ echo "Network: $(get_titan_connection_status "$VALIDATOR_USER")"
 ./validator-dashboard-helpers/status-check
 
 # Or use individual utility functions
-source common.sh
+source lib.sh
 export VALIDATOR_USER=testnet-validator
 
 # Process information
@@ -198,7 +198,7 @@ echo "Errors: $ERROR_COUNT total, $RECENT_ERRORS recent"
 
 ```bash
 #!/bin/bash
-source common.sh
+source lib.sh
 export VALIDATOR_USER=testnet-validator
 
 check_alerts() {
@@ -307,7 +307,7 @@ sudo ss -tlnp | grep 9002
 ### Validator-Specific Metrics
 
 ```bash
-source common.sh
+source lib.sh
 export VALIDATOR_USER=testnet-validator
 
 # Data growth tracking
@@ -475,7 +475,7 @@ Consider setting up external monitoring that uses the utility functions:
 # Example cron job script (run every 5 minutes)
 # */5 * * * * /path/to/validator-alert-check.sh
 
-source /path/to/valops/common.sh
+source /path/to/valops/lib.sh
 export VALIDATOR_USER=testnet-validator
 
 if ! is_validator_running "$VALIDATOR_USER"; then
@@ -497,7 +497,7 @@ You can create custom monitoring solutions using the utility functions:
 ```bash
 #!/bin/bash
 # Custom monitoring dashboard
-source common.sh
+source lib.sh
 export VALIDATOR_USER=testnet-validator
 
 while true; do
@@ -521,7 +521,7 @@ The utility functions can be integrated with monitoring systems like Prometheus,
 ```bash
 #!/bin/bash
 # Export metrics for external monitoring
-source common.sh
+source lib.sh
 export VALIDATOR_USER=testnet-validator
 
 # Generate metrics in Prometheus format

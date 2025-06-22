@@ -24,7 +24,7 @@
 # Idempotent: Safe to run multiple times
 #
 set -euo pipefail
-source "$(dirname "$0")/common.sh"
+source "$(dirname "$0")/lib.sh"
 cd "$PROJECT_ROOT"
 
 log_echo() {

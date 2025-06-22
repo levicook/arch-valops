@@ -17,7 +17,7 @@
 # - Source binaries must exist in VM
 #
 set -euo pipefail
-source "$(dirname "$0")/common.sh"
+source "$(dirname "$0")/lib.sh"
 cd "$PROJECT_ROOT"
 
 # Function for consistent output
