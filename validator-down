@@ -44,5 +44,23 @@ stop_validator "$VALIDATOR_USER"
 
 # Handle clobber (complete removal)
 if [ "$CLOBBER" = true ]; then
+    log_echo "WARNING: About to completely remove validator '$VALIDATOR_USER'"
+    log_echo "  This will delete: user account, home directory, and ALL data"
+
+    # Attempt to create backup before destruction
+    log_echo "Creating emergency backup before removal..."
+
+    if backup_all_identities "$VALIDATOR_USER"; then
+        log_echo "✓ Emergency backup(s) created before removal"
+    else
+        log_echo "⚠ Failed to create emergency backups, refusing to clobber"
+        exit 1
+    fi
+
+    log_echo ""
+    log_echo "Proceeding with complete removal in 3 seconds..."
+    log_echo "Press Ctrl+C to abort!"
+    sleep 3
+
     clobber_user "$VALIDATOR_USER"
 fi

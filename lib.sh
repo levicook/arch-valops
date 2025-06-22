@@ -122,6 +122,9 @@ init_validator_operator() {
     # Deploy encrypted identity
     deploy_validator_identity "$username" "$encrypted_identity_key" "$network_mode"
 
+    # Create encrypted backup of the identity
+    backup_validator_identity "$username" "$network_mode"
+
     # Update scripts and configuration
     update_validator_operator "$username"
 }
@@ -228,6 +231,136 @@ deploy_validator_identity() {
 
     # Secure cleanup (shred handled by trap)
     log_echo "✓ Temporary files securely cleaned"
+}
+
+# Create encrypted backup of validator identity in ~/.valops/age
+backup_validator_identity() {
+    local username="$1"
+    local network_mode="$2"
+    local home_dir="/home/$username"
+    local data_dir="$home_dir/data/.arch_data"
+    local identity_dir="$data_dir/$network_mode"
+    local identity_file="$identity_dir/identity-secret"
+
+    log_echo "Creating encrypted identity backup for $username..."
+
+    # Verify user and identity exist
+    if ! id "$username" &>/dev/null; then
+        log_error "✗ User '$username' not found"
+        return 1
+    fi
+
+    if ! sudo -u "$username" test -f "$identity_file"; then
+        log_error "✗ Identity file not found: $identity_file"
+        log_error "  Is the validator initialized for network '$network_mode'?"
+        return 1
+    fi
+
+    # Verify age infrastructure exists
+    local age_dir="$HOME/.valops/age"
+    if [[ ! -f "$age_dir/host-identity.pub" ]]; then
+        log_error "✗ Age keys not found. Run: ./setup-age-keys"
+        return 1
+    fi
+
+    # Check if age is installed
+    if ! command -v age >/dev/null 2>&1; then
+        log_error "✗ age is not installed. Install with: sudo apt install age"
+        return 1
+    fi
+
+    # Get peer ID for naming
+    local peer_id=$(sudo -u "$username" validator --generate-peer-id --data-dir "$data_dir" --network-mode "$network_mode" 2>/dev/null | grep peer_id | cut -d'"' -f4 || echo "")
+    if [[ -z "$peer_id" || "$peer_id" == "unknown" ]]; then
+        log_error "✗ Could not determine peer ID"
+        return 1
+    fi
+
+    local backup_file="$age_dir/identity-backup-$peer_id.age"
+
+    # Check if backup already exists
+    if [[ -f "$backup_file" ]]; then
+        log_echo "✓ Identity backup already exists: $backup_file"
+        log_echo "  Peer ID: $peer_id"
+        log_echo "  Network: $network_mode"
+        return 0
+    fi
+
+    # Validate identity format before encryption (should be 64-character hex)
+    log_echo "Validating identity format..."
+    local secret_key=$(sudo cat "$identity_file")
+    if [[ ! "$secret_key" =~ ^[a-f0-9]{64}$ ]]; then
+        log_error "✗ Invalid identity format (expected 64-character hex)"
+        return 1
+    fi
+
+    # Encrypt identity directly through pipe
+    log_echo "Creating encrypted identity backup..."
+    if ! sudo cat "$identity_file" | age -r "$(cat "$age_dir/host-identity.pub")" -o "$backup_file"; then
+        log_error "✗ Failed to encrypt identity backup"
+        return 1
+    fi
+
+    # Set secure permissions (consistent with age directory)
+    chmod 600 "$backup_file"
+
+    log_echo "✓ Identity backup created"
+    log_echo "  Peer ID: $peer_id"
+    log_echo "  Network: $network_mode"
+    log_echo "  Backup: $backup_file"
+    log_echo ""
+    log_echo "💡 BACKUP STRATEGY:"
+    log_echo "  Back up entire directory: ~/.valops/age/"
+    log_echo "  Contains: host keys + encrypted identity backups"
+}
+
+# Create encrypted backups of all validator identities
+backup_all_identities() {
+    local username="$1"
+
+    log_echo "Creating encrypted backups for all identities of $username..."
+
+    # Verify user exists
+    if ! id "$username" &>/dev/null; then
+        log_error "✗ User '$username' not found"
+        return 1
+    fi
+
+    # Verify age infrastructure exists
+    local age_dir="$HOME/.valops/age"
+    if [[ ! -f "$age_dir/host-identity.pub" ]]; then
+        log_error "✗ Age keys not found. Run: ./setup-age-keys"
+        return 1
+    fi
+
+    # Find all identity-secret files and backup each one
+    local data_dir="/home/$username/data/.arch_data"
+    if ! sudo -u "$username" test -d "$data_dir" 2>/dev/null; then
+        log_echo "⚠ No .arch_data directory found for $username"
+        return 0
+    fi
+
+    # Simple approach: iterate through known network directories
+    local found_any=false
+    for network in testnet mainnet devnet; do
+        local identity_file="$data_dir/$network/identity-secret"
+        if sudo -u "$username" test -f "$identity_file" 2>/dev/null; then
+            log_echo "  Processing $network identity..."
+            backup_validator_identity "$username" "$network"
+            found_any=true
+        fi
+    done
+
+    if [[ "$found_any" != "true" ]]; then
+        log_echo "⚠ No identity files found for $username"
+        log_echo "  Path searched: $data_dir"
+        return 0
+    fi
+
+    log_echo ""
+    log_echo "✓ All identity backups completed"
+    log_echo "  Backups stored in: ~/.valops/age/"
+    return 0
 }
 
 git_root() {

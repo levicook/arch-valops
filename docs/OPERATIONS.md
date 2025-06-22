@@ -9,10 +9,64 @@ This guide covers day-to-day operational procedures for managing Arch Network va
 ./check-env                                   # Security assessment (run first)
 ./setup-age-keys                              # Setup encryption keys (one-time)
 ./validator-init --encrypted-identity-key validator-identity.age --network testnet --user testnet-validator  # Initialize (one-time)
+./backup-identities --user testnet-validator # Create identity backups
 ./validator-up --user testnet-validator      # Start validator
 ./validator-down --user testnet-validator    # Stop validator
 VALIDATOR_USER=testnet-validator ./validator-dashboard # Monitor
 ```
+
+## Identity Management
+
+### Creating Encrypted Backups
+
+Identity backups are automatically created during initialization and can be created manually:
+
+```bash
+# Create encrypted backups of all validator identities
+./backup-identities --user testnet-validator
+```
+
+**What this does:**
+- Automatically discovers ALL identity files in validator's data directory
+- Reads each `identity-secret` file found (testnet, devnet, mainnet, etc.)
+- Encrypts each using the host's age public key
+- Saves as `~/.valops/age/identity-backup-{peer-id}.age`
+- Uses each validator's peer ID as the filename for uniqueness
+- Backup is idempotent (won't overwrite existing backups)
+- Reports summary of successful/failed backups
+
+**Backup Strategy:**
+```bash
+# List all identity backups
+ls -la ~/.valops/age/identity-backup-*.age
+
+# Complete backup approach: Back up the entire age directory
+tar -czf valops-age-backup-$(date +%Y%m%d).tar.gz ~/.valops/age/
+```
+
+**Recovery from Backup:**
+```bash
+# Use backup file with validator-init on same or different host
+./validator-init --encrypted-identity-key ~/.valops/age/identity-backup-{peer-id}.age --network testnet --user testnet-validator
+```
+
+> **Design Note: No Separate Restore Process**
+> 
+> The backup system is intentionally designed with perfect symmetry - backup files are created in exactly the same `.age` format as original encrypted identity files. This means:
+> - **No special restore command needed** - `validator-init` handles both original deployments and restores
+> - **Perfect interoperability** - backup files work identically to original encrypted keys
+> - **Simple disaster recovery** - same process whether using original key or backup
+> - **Reduced complexity** - one encryption format, one deployment process
+> 
+> This architectural choice eliminates the complexity of separate backup/restore workflows while maintaining complete functionality.
+
+### Disaster Recovery
+
+To restore a validator on a new host:
+
+1. Copy `~/.valops/age/` directory to new host
+2. Run `./setup-age-keys` to ensure age infrastructure exists
+3. Use backup file: `./validator-init --encrypted-identity-key ~/.valops/age/identity-backup-{peer-id}.age --network testnet --user testnet-validator`
 
 ## Security Assessment
 
@@ -81,7 +135,37 @@ sudo -u testnet-validator ls -la /home/testnet-validator/{run-validator,halt-val
 ./validator-down --user testnet-validator
 
 # Complete removal (deletes user and all data)
+# WARNING: Creates emergency backup before destruction
 ./validator-down --clobber --user testnet-validator
+```
+
+**Enhanced Clobber Safety:**
+
+The `--clobber` operation includes automatic safety mechanisms:
+
+1. **Emergency Backup**: Automatically creates backup of ALL identities before destruction
+2. **Warning with Abort Window**: Shows clear warning with 3-second countdown to abort
+3. **Fail-Safe Logic**: Refuses to destroy if backup creation fails
+4. **Complete Preservation**: All identities (testnet, mainnet, devnet) are backed up
+
+**What happens during clobber:**
+```bash
+./validator-down --clobber --user testnet-validator
+# Output:
+# WARNING: About to completely remove validator 'testnet-validator'
+#   This will delete: user account, home directory, and ALL data
+# Creating emergency backup before removal...
+# ✓ All identity backups completed
+# ✓ Emergency backup(s) created before removal
+# 
+# Proceeding with complete removal in 3 seconds...
+# Press Ctrl+C to abort!
+```
+
+**Recovery after clobber:**
+```bash
+# Restore from auto-created backup
+./validator-init --encrypted-identity-key ~/.valops/age/identity-backup-{peer-id}.age --network testnet --user testnet-validator
 ```
 
 ## Validator Lifecycle Management

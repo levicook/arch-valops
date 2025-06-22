@@ -239,7 +239,11 @@ tail -f /home/testnet-validator/logs/validator.log
 
 **What it does**:
 - Gracefully stops validator using halt-validator script
-- With `--clobber`: Securely destroys identity files and removes user
+- With `--clobber`: Enhanced safe destruction with automatic emergency backup
+  - Creates emergency backup of ALL identities before destruction
+  - Shows warning with 3-second abort window
+  - Refuses destruction if backup fails (fail-safe)
+  - Only proceeds with destruction after backup confirmed
 - Comprehensive process termination with timeouts and fallbacks
 - Clear reporting of shutdown status
 
@@ -257,6 +261,38 @@ tail -f /home/testnet-validator/logs/validator.log
 
 **Idempotency**: Safe to run multiple times (preserves existing keys)
 **Dependencies**: `age` command must be available
+
+#### `backup-identities`
+**Purpose**: Create encrypted backups of all validator identities
+
+**What it does**:
+- Automatically discovers ALL identity files in validator's data directory
+- Reads each `identity-secret` file found (testnet, devnet, mainnet, etc.)
+- Encrypts each using host's age public key (same as original deployment)
+- Saves as `~/.valops/age/identity-backup-{peer-id}.age`
+- Uses each validator's peer ID for unique, immutable filename
+- Simple iteration through known network directories (testnet, mainnet, devnet)
+
+**Design Philosophy - Backup/Restore Symmetry**:
+> **No Separate Restore Process Required**
+> 
+> Backup files are created in exactly the same `.age` format as original encrypted identity files. This architectural choice provides:
+> - **Perfect Interoperability**: Backup files work identically to original encrypted keys
+> - **Unified Deployment Process**: `validator-init` handles both original deployments and restores
+> - **Simplified Disaster Recovery**: Same command, same process, whether using original or backup
+> - **Reduced Operational Complexity**: One encryption format, one deployment workflow
+> 
+> Use cases:
+> ```bash
+> # Original deployment
+> ./validator-init --encrypted-identity-key original-identity.age --network testnet --user testnet-validator
+> 
+> # Restore from backup (identical process)
+> ./validator-init --encrypted-identity-key ~/.valops/age/identity-backup-{peer-id}.age --network testnet --user testnet-validator
+> ```
+
+**Idempotency**: Safe to run multiple times (won't overwrite existing backups)
+**Dependencies**: Validator must be initialized, age keys must exist
 
 #### `sync-bins`
 **Purpose**: Synchronize binaries from development VM to bare metal
@@ -407,6 +443,9 @@ All scripts use prefixed output (`script-name: message`) for easy identification
 
 ### Complete Operational Visibility
 Every action is logged with timestamps, configuration details, and clear status reporting.
+
+### Symmetric Backup/Restore Design
+Backup and restore operations use identical file formats and processes. Backup files are not special formats requiring separate restore tools - they are standard encrypted identity files that work with existing deployment workflows. This eliminates the complexity of maintaining separate backup/restore code paths while ensuring perfect fidelity.
 
 ### Clear Separation of Concerns
 - **IaC scripts** (root level): Manage infrastructure and sync binaries

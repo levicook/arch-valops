@@ -1,0 +1,86 @@
+#!/bin/bash
+#
+# backup-identities - Create encrypted backups of all validator identities
+#
+# Creates encrypted backups in ~/.valops/age/ directory using peer ID as filenames.
+# Automatically discovers and backs up ALL identities found in validator's data directory.
+# Backup files can be used with validator-init to restore identities on same or different host.
+#
+# Usage:
+#   backup-identities --user <validator-username>
+#
+# What it does:
+# - Finds all identity-secret files in validator's .arch_data tree
+# - Encrypts each with host's age public key
+# - Saves as ~/.valops/age/identity-backup-{peer-id}.age
+# - Idempotent: won't overwrite existing backups
+# - Reports summary of successful/failed backups
+#
+set -euo pipefail
+source "$(dirname "$0")/lib.sh"
+cd "$PROJECT_ROOT"
+
+log_echo() {
+    echo "backup-identities: $@"
+}
+
+# Parse command line arguments
+VALIDATOR_USER=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+    --user)
+        VALIDATOR_USER="$2"
+        shift 2
+        ;;
+    -h | --help)
+        echo "Usage: backup-identities [options]"
+        echo ""
+        echo "Options:"
+        echo "  --user <username>                Validator user to backup"
+        echo "  -h, --help                       Show this help"
+        echo ""
+        echo "Examples:"
+        echo "  backup-identities --user testnet-validator"
+        echo ""
+        echo "This automatically discovers and backs up ALL validator identities:"
+        echo "  - Searches /home/<user>/data/.arch_data for identity-secret files"
+        echo "  - Backs up testnet, devnet, mainnet - whatever exists"
+        echo "  - Saves each as ~/.valops/age/identity-backup-{peer-id}.age"
+        echo ""
+        echo "Each backup can be used with validator-init to restore the identity."
+        exit 0
+        ;;
+    *)
+        echo "backup-identities: Unknown option: $1"
+        echo "backup-identities: Use --help for usage information"
+        exit 1
+        ;;
+    esac
+done
+
+# Validate arguments - user is required
+if [[ -z "$VALIDATOR_USER" ]]; then
+    log_echo "ERROR: --user option is required"
+    echo "Usage: backup-identities --user <username>"
+    exit 1
+fi
+
+# Check prerequisites
+if ! command -v age >/dev/null 2>&1; then
+    log_echo "✗ age binary not found. Install with: sudo apt install age"
+    exit 1
+fi
+
+AGE_DIR="$HOME/.valops/age"
+if [[ ! -f "$AGE_DIR/host-identity.pub" ]]; then
+    log_echo "✗ Age keys not found. Run: ./setup-age-keys first"
+    exit 1
+fi
+
+# Create the backups
+backup_all_identities "$VALIDATOR_USER"
+
+log_echo ""
+log_echo "✓ Backup complete. List all backups with:"
+log_echo "  ls -la ~/.valops/age/identity-backup-*.age"
