@@ -20,7 +20,7 @@ is_running() {
 
 # Function to find all validator processes
 find_validator_pids() {
-    pgrep -f "arch-cli validator-start" || echo ""
+    pgrep -f "validator --network-mode" || echo ""
 }
 
 # Find all validator processes

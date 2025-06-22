@@ -16,7 +16,7 @@ This guide walks you through setting up your first Arch Network validator using 
 sudo apt update && sudo apt upgrade -y
 
 # Install essential packages
-sudo apt install -y curl wget git tmux htop nethogs jq build-essential
+sudo apt install -y curl wget git tmux htop nethogs jq build-essential age
 
 # Install multipass for development VM
 sudo snap install multipass
@@ -35,7 +35,7 @@ Host your-server
   ForwardAgent yes
 
 Host dev-env
-  HostName 10.142.17.80  # Will be detected automatically
+  HostName 10.142.17.80  # needs to reflect `multipass info dev-env`
   User ubuntu
   ProxyJump your-server
   AddKeysToAgent yes
@@ -46,11 +46,8 @@ Host dev-env
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/valops.git
-cd valops
-
-# Make scripts executable
-chmod +x check-env env-init sync-bins validator-dashboard
+git clone https://github.com/levicook/arch-valops.git ~/valops
+cd ~/valops
 ```
 
 ## Step 2: Assess Host Security
@@ -90,7 +87,40 @@ Before proceeding with validator setup, assess your host security posture:
 ✅ Minimal firewall rules (2) - principle of least privilege
 ```
 
-## Step 3: Create Development Environment
+## Step 3: Setup Age Encryption Keys
+
+Set up age encryption keys for secure validator identity deployment:
+
+```bash
+# Generate age keypair for identity encryption
+./setup-age-keys
+```
+
+**What this does:**
+- Creates `~/.valops/age/` directory with secure permissions (700)
+- Generates age keypair for encrypting/decrypting validator identities
+- Displays the public key needed for identity generation
+
+**Expected output:**
+```
+=== Setting up Age encryption keys ===
+Key directory: /home/ubuntu/.valops/age
+
+Generating new age keypair...
+Public key created...
+Private key created...
+✓ Generated new age keypair
+
+=== Host Public Key (for identity encryption) ===
+age1r6amd5p6k83ha0fxmeqph68nte3h0fuvr4d75v524cffpxkgaatqzk7q2m
+
+📋 INSTRUCTIONS:
+1. Use the public key above as the recipient when encrypting validator identities
+```
+
+**Save the public key** - you'll need it for identity generation in Step 5.
+
+## Step 4: Create Development Environment
 
 ```bash
 # Create development VM
@@ -108,7 +138,7 @@ multipass exec dev-env -- bash -c "curl --proto '=https' --tlsv1.2 -sSf https://
 multipass exec dev-env -- bash -c "source ~/.cargo/env && rustup install 1.82.0 && rustup default 1.82.0"
 ```
 
-## Step 4: Build Arch Network Binaries
+## Step 5: Build Arch Network Binaries
 
 ```bash
 # SSH into development VM
@@ -125,87 +155,114 @@ source ~/.cargo/env
 make all
 
 # Verify binaries were built
-ls -la target/release/{arch-cli,validator}
+ls -la target/release/validator
 
 # Exit the VM
 exit
 ```
 
-## Step 5: Deploy Validator Environment
+## Step 6: Sync Binaries to Bare Metal
 
 ```bash
-# Back on bare metal, deploy validator environment
-./env-init
-```
-
-**What this does:**
-- Creates `testnet-validator` user with proper permissions
-- Sets up directory structure (`/home/testnet-validator/{data,logs}`)
-- Deploys validator startup/shutdown scripts
-- Configures automatic log rotation
-
-**Expected output:**
-```
-common: Removing arch user...
-common: ✓ Removed arch user
-common: Creating testnet-validator user...
-common: ✓ Created testnet-validator user
-common: Setting up directories for testnet-validator...
-common: ✓ Created validator directories for testnet-validator
-common: Deploying validator scripts for testnet-validator...
-common: ✓ Deployed run-validator script for testnet-validator
-common: ✓ Deployed halt-validator script for testnet-validator
-common: ✓ Deployed logrotate config for testnet-validator
-common: ✓ Deployed validator operator for testnet-validator
-```
-
-## Step 6: Sync Binaries from Development VM
-
-```bash
-# Sync binaries from dev-env VM to bare metal
+# Back on bare metal, sync binaries from dev-env VM
 ./sync-bins
 ```
 
 **What this does:**
 - Connects to `dev-env` VM via SCP
-- Copies `arch-cli` and `validator` binaries to `/usr/local/bin/`
+- Copies `validator` binary to `/usr/local/bin/`
 - Only updates files that have changed (efficient)
 
 **Expected output:**
 ```
-sync-bins: Syncing arch-cli from dev-env (10.142.17.80)...
-sync-bins: ✓ Updated arch-cli binary
 sync-bins: Syncing validator from dev-env (10.142.17.80)...
 sync-bins: ✓ Updated validator binary
 sync-bins: ✓ Sync complete!
 ```
 
-## Step 7: Start Your First Validator
+## Step 7: Generate Validator Identity (Secure Environment)
+
+⚠️ **SECURITY CRITICAL**: This step should ideally be done in a secure, air-gapped environment (separate machine, VM, or offline system).
 
 ```bash
-# Start the validator (runs in foreground with logging)
-sudo -u testnet-validator /home/testnet-validator/run-validator
+# Set the host public key from Step 3
+HOST_PUBLIC_KEY="age1r6amd5p6k83ha0fxmeqph68nte3h0fuvr4d75v524cffpxkgaatqzk7q2m"
+
+# Generate validator identity and encrypt secret key
+validator --generate-peer-id --data-dir $(mktemp -d) | grep secret_key | cut -d'"' -f4 | age -r "$HOST_PUBLIC_KEY" -o validator-identity.age
 ```
 
-**You should see:**
-```
-run-validator: Starting Arch Network validator...
-run-validator: Configuration:
-run-validator:   ARCH_DATA_DIR=/home/testnet-validator/data/.arch_data
-run-validator:   ARCH_RPC_BIND_IP=127.0.0.1
-run-validator:   ARCH_RPC_BIND_PORT=9002
-run-validator:   ARCH_TITAN_ENDPOINT=https://titan-public-http.test.arch.network
-run-validator:   ARCH_NETWORK_MODE=testnet
-run-validator: Validator starting...
-[Validator logs will stream here]
-```
+**What this does:**
+- Generates a new validator identity in a temporary directory
+- Extracts only the 64-character hex secret key
+- Encrypts the secret key with your host's public key
+- Creates `validator-identity.age` file for secure transport
 
-**Stop the validator:** Press `Ctrl+C` or run in another terminal:
+**Security Notes:**
+- Only the secret key is extracted and encrypted (minimal exposure)
+- Temporary directory is automatically cleaned up
+- The encrypted file is safe to transfer over insecure channels
+- Original identity data never leaves the secure environment
+
+## Step 8: Initialize Validator
+
+Transfer the `validator-identity.age` file to your validator server, then initialize:
+
 ```bash
-sudo -u testnet-validator /home/testnet-validator/halt-validator
+# Initialize validator with encrypted identity (one-time setup)
+./validator-init --encrypted-identity-key validator-identity.age --network testnet --user testnet-validator
 ```
 
-## Step 8: Start Monitoring Dashboard
+**What this does:**
+- Verifies age keys and prerequisites exist
+- Creates `testnet-validator` user with proper permissions
+- Sets up directory structure (`/home/testnet-validator/{data,logs}`)
+- Decrypts and deploys the validator identity securely
+- Deploys validator startup/shutdown scripts
+- Configures automatic log rotation and firewall rules
+
+**Expected output:**
+```
+validator-init: Creating testnet-validator user...
+validator-init: ✓ Created testnet-validator user
+validator-init: Deploying encrypted identity key for testnet-validator...
+validator-init: Decrypting encrypted identity key...
+validator-init: Verifying secret key format...
+validator-init: Installing validator identity...
+validator-init: ✓ Encrypted identity key deployed successfully
+validator-init:   Network: testnet
+validator-init:   Peer ID: 16Uiu2HAmJQbfNZjSCNi8Bw67ND9MvRpMZhh1CCdShQBPYoAveX8m
+validator-init:   Location: /home/testnet-validator/data/.arch_data/testnet
+validator-init: ✓ Temporary files securely cleaned
+
+✓ Initialized. Start with: ./validator-up --user testnet-validator
+```
+
+**📋 Important**: Save the Peer ID shown above - you'll need it to register with the Arch Network.
+
+## Step 9: Start Your Validator
+
+```bash
+# Start the validator
+./validator-up --user testnet-validator
+```
+
+**What this does:**
+- Updates validator scripts to latest versions
+- Refreshes log rotation and firewall configuration
+- Starts the validator process in the background
+
+**Expected output:**
+```
+validator-up: Ensuring log rotation configuration for testnet-validator...
+validator-up: ✓ Ensured logrotate config for testnet-validator
+validator-up: Ensuring validator network connectivity...
+validator-up: ✓ Ensured RPC port 9002 (localhost only)
+validator-up: ✓ Gossip port 29001 already properly configured
+validator-up: ✓ Validator started
+```
+
+## Step 10: Start Monitoring Dashboard
 
 ```bash
 # Start comprehensive monitoring (in a new terminal)
@@ -223,13 +280,13 @@ VALIDATOR_USER=testnet-validator ./validator-dashboard
 - `Ctrl+b + arrows`: Switch panes
 - `Ctrl+b + d`: Detach (keeps running)
 
-## Step 9: Verify Validator Health
+## Step 11: Verify Validator Health
 
 In the monitoring dashboard or a separate terminal:
 
 ```bash
 # Check validator process
-ps aux | grep arch-cli
+ps aux | grep validator
 
 # Test RPC endpoint
 curl -X POST -H "Content-Type: application/json" \
@@ -240,10 +297,42 @@ curl -X POST -H "Content-Type: application/json" \
 tail -f /home/testnet-validator/logs/validator.log
 
 # Check network connectivity
-curl -s https://titan-public-http.test.arch.network | head -5
+curl -s https://titan-public-tcp.test.arch.network
+```
+
+## Validator Lifecycle Management
+
+### Stop Validator
+```bash
+# Graceful shutdown
+./validator-down --user testnet-validator
+```
+
+### Restart Validator
+```bash
+# Stop and start
+./validator-down --user testnet-validator
+./validator-up --user testnet-validator
+```
+
+### Complete Removal (for testing/cleanup)
+```bash
+# Stop validator and remove all data (DESTRUCTIVE)
+./validator-down --clobber --user testnet-validator
 ```
 
 ## Common First-Time Issues
+
+### `setup-age-keys` fails with "age: command not found"
+**Problem:** Age encryption tool not installed
+**Solution:**
+```bash
+# Install age
+sudo apt install -y age
+
+# Verify installation
+age --version
+```
 
 ### `sync-bins` fails with "Connection refused"
 **Problem:** Can't connect to development VM
@@ -259,45 +348,55 @@ multipass start dev-env
 multipass exec dev-env -- echo "test"
 ```
 
+### `validator-init` fails with "Age keys not found"
+**Problem:** Age keys not properly set up
+**Solution:**
+```bash
+# Run setup-age-keys first
+./setup-age-keys
+
+# Verify keys exist
+ls -la ~/.valops/age/
+```
+
+### `validator-init` fails with "Failed to decrypt"
+**Problem:** Wrong public key used for encryption or corrupted file
+**Solution:**
+```bash
+# Verify public key matches
+cat ~/.valops/age/host-identity.pub
+
+# Re-generate identity with correct public key
+# (repeat Step 7 with correct HOST_PUBLIC_KEY)
+```
+
 ### Validator won't start - "Binary not found"
 **Problem:** Binaries not properly installed
 **Solution:**
 ```bash
 # Check binary installation
-which arch-cli validator
-ls -la /usr/local/bin/{arch-cli,validator}
+which validator
+ls -la /usr/local/bin/validator
 
 # Re-sync binaries
 ./sync-bins
 
 # Verify permissions
-sudo chmod +x /usr/local/bin/{arch-cli,validator}
+sudo chmod +x /usr/local/bin/validator
 ```
 
 ### RPC endpoint not responding
 **Problem:** Validator not listening on port 9002
 **Solution:**
 ```bash
+# Check if validator is running
+./validator-up --user testnet-validator
+
 # Check if port is listening
 sudo ss -tlnp | grep 9002
 
 # Check validator logs for errors
 tail -20 /home/testnet-validator/logs/validator.log
-
-# Verify network configuration
-sudo ufw status  # Check firewall
-```
-
-### Dashboard won't start - "VALIDATOR_USER not set"
-**Problem:** Environment variable not configured
-**Solution:**
-```bash
-# Always specify the validator user
-VALIDATOR_USER=testnet-validator ./validator-dashboard
-
-# Or export it first
-export VALIDATOR_USER=testnet-validator
-./validator-dashboard
 ```
 
 ## Development Workflow
@@ -305,14 +404,13 @@ export VALIDATOR_USER=testnet-validator
 ### Making Changes
 ```bash
 # After updating resources/* scripts
-./env-init  # Redeploys latest scripts
+./validator-down --user testnet-validator
+./validator-up --user testnet-validator  # Updates scripts automatically
 
 # After rebuilding binaries in dev-env
 ./sync-bins  # Syncs latest binaries
-
-# Restart validator to use updates
-sudo -u testnet-validator /home/testnet-validator/halt-validator
-sudo -u testnet-validator /home/testnet-validator/run-validator
+./validator-down --user testnet-validator
+./validator-up --user testnet-validator  # Restart with new binaries
 ```
 
 ### Monitoring Best Practices
@@ -325,10 +423,11 @@ sudo -u testnet-validator /home/testnet-validator/run-validator
 
 Now that your validator is running:
 
-1. **Learn Operations**: Read the [Operations Guide](OPERATIONS.md) for day-to-day management
-2. **Setup Monitoring**: Review [Monitoring Guide](MONITORING.md) for advanced observability
-3. **Understand Security**: Study [Security Guide](SECURITY.md) for production deployment
-4. **Explore Architecture**: See [Architecture Guide](ARCHITECTURE.md) for development workflow
+1. **Register Your Validator**: Use the Peer ID from Step 8 to register with Arch Network
+2. **Learn Operations**: Read the [Operations Guide](OPERATIONS.md) for day-to-day management
+3. **Setup Advanced Monitoring**: Review [Monitoring Guide](MONITORING.md) for comprehensive observability
+4. **Understand Security**: Study [Security Guide](SECURITY.md) for production deployment
+5. **Explore Architecture**: See [Architecture Guide](ARCHITECTURE.md) for development workflow
 
 ## Getting Help
 
@@ -337,4 +436,4 @@ Now that your validator is running:
 - **Documentation**: Each guide has comprehensive troubleshooting sections
 - **Interactive Help**: Type `show-help` in any dashboard terminal pane
 
-**Congratulations!** You now have a running Arch Network validator with comprehensive monitoring. 🎉 
+**Congratulations!** You now have a running Arch Network validator with secure identity management and comprehensive monitoring. 🎉 

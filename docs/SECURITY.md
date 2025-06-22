@@ -195,7 +195,8 @@ Security assessment should be the first step in validator deployment:
 # (follow tool recommendations)
 
 # 3. Proceed with validator deployment
-./env-init
+./setup-age-keys
+./validator-init --encrypted-identity-key validator-identity.age --network testnet --user testnet-validator
 ```
 
 Regular security assessments help maintain security posture over time and catch configuration drift.
@@ -239,8 +240,8 @@ sudo find /home/testnet-validator/ -type f -perm /o+w
 
 ```bash
 # Binary integrity
-which arch-cli validator
-md5sum /usr/local/bin/{arch-cli,validator}
+which validator
+md5sum /usr/local/bin/validator
 
 # Configuration security
 sudo -u testnet-validator cat /home/testnet-validator/run-validator
@@ -302,10 +303,10 @@ sudo find /home/testnet-validator/ -perm /o+w -type f
 **Important:** Validator signing keys are managed separately from this infrastructure. The valops toolkit never handles cryptocurrency keys.
 
 ```bash
-# Verify no private keys in validator directories
-sudo -u testnet-validator find /home/testnet-validator/ -name "*.key" -o -name "*.pem"
+# Verify identity files are properly secured
+sudo -u testnet-validator find /home/testnet-validator/ -name "identity-secret" -exec ls -la {} \;
 
-# Check for any credential files
+# Check for any unexpected credential files
 sudo -u testnet-validator find /home/testnet-validator/ -name "*secret*" -o -name "*private*"
 
 # Verify SSH agent forwarding (from development machine)

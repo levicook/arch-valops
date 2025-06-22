@@ -14,7 +14,7 @@ source common.sh
 
 # 2. Test individual functions safely
 create_user "dev-test"
-deploy_validator_operator "dev-test"
+init_validator_operator "dev-test" "testnet" "test-identity.age"
 
 # 3. Verify deployment
 sudo -u dev-test ls -la /home/dev-test/
@@ -22,7 +22,7 @@ cat /etc/logrotate.d/validator-dev-test
 
 # 4. Test operational scripts
 sudo -u dev-test /home/dev-test/run-validator &
-sudo -u dev-test /home/dev-test/halt-validator
+stop_validator "dev-test"
 
 # 5. Clean up test resources
 clobber_validator_operator "dev-test"
@@ -43,7 +43,7 @@ git pull origin main
 make all
 
 # Verify binaries
-ls -la target/release/{arch-cli,validator}
+ls -la target/release/validator
 
 # See all available build targets
 make help
@@ -56,15 +56,16 @@ make help
 ./sync-bins
 
 # Verify installation
-which arch-cli validator
-arch-cli --version
+which validator
+validator --version
 ```
 
 #### Validating Environment Setup
 
 ```bash
-# Test complete deployment
-./env-init
+# Test complete initialization
+./setup-age-keys
+./validator-init --encrypted-identity-key validator-identity.age --network testnet --user testnet-validator
 
 # Verify all components
 sudo -u testnet-validator ls -la /home/testnet-validator/
@@ -81,8 +82,8 @@ sudo logrotate -d /etc/logrotate.d/validator-testnet-validator
 tail -f /home/testnet-validator/logs/validator.log
 
 # Search specific events
-grep "run-validator:" /home/testnet-validator/logs/validator.log | tail -10
-grep "halt-validator:" /home/testnet-validator/logs/validator.log | tail -5
+grep "validator-up:" /home/testnet-validator/logs/validator.log | tail -10
+grep "validator-down:" /home/testnet-validator/logs/validator.log | tail -5
 
 # Check startup configurations
 grep "Configuration:" /home/testnet-validator/logs/validator.log | tail -1
@@ -92,11 +93,12 @@ grep "Configuration:" /home/testnet-validator/logs/validator.log | tail -1
 
 ```bash
 # Check validator status
-ps aux | grep validator
-sudo -u testnet-validator pgrep -f "arch-cli validator-start"
+source common.sh
+is_validator_running "testnet-validator" && echo "Running" || echo "Stopped"
+get_validator_pid "testnet-validator"
 
 # Test shutdown behavior
-sudo -u testnet-validator /home/testnet-validator/halt-validator
+./validator-down --user testnet-validator
 ```
 
 ### Environment Validation
@@ -110,8 +112,8 @@ id testnet-validator
 sudo -u testnet-validator ls -la /home/testnet-validator/
 
 # Verify binary installation
-which arch-cli validator
-ls -la /usr/local/bin/{arch-cli,validator}
+which validator
+ls -la /usr/local/bin/validator
 
 # Test network connectivity
 curl -s https://titan-public-http.test.arch.network | head -5
@@ -154,9 +156,11 @@ common: ✓ Removed test-validator user
 
 ### Common Issues and Solutions
 
-#### `env-init` fails with "run-validator script not found"
-**Problem**: Resource scripts missing
-**Solution**: Ensure `resources/run-validator` exists in the project directory
+#### `validator-init` fails with "encrypted identity file not found"
+**Problem**: Identity file missing or age keys not set up
+**Solutions**: 
+- Run `./setup-age-keys` first
+- Ensure encrypted identity file exists and is accessible
 
 #### `sync-bins` fails with connection errors
 **Problem**: Cannot connect to development VM
@@ -169,16 +173,16 @@ common: ✓ Removed test-validator user
 **Problem**: Startup issues
 **Solutions**:
 - Check logs: `tail -f /home/testnet-validator/logs/validator.log`
-- Verify binaries: `which arch-cli && which validator`
+- Verify binaries: `which validator`
 - Check environment: `sudo -u testnet-validator ls -la /home/testnet-validator/`
 - Verify network connectivity: `curl -s https://titan-public-http.test.arch.network`
 
 #### Validator won't stop
 **Problem**: Shutdown issues
 **Solutions**:
-- Check process status: `ps aux | grep validator`
-- Try manual halt: `sudo -u testnet-validator /home/testnet-validator/halt-validator`
-- Check logs for shutdown details: `grep "halt-validator:" /home/testnet-validator/logs/validator.log`
+- Check process status: `source common.sh && is_validator_running "testnet-validator"`
+- Try manual shutdown: `./validator-down --user testnet-validator`
+- Check logs for shutdown details: `grep "validator-down:" /home/testnet-validator/logs/validator.log`
 
 #### Log rotation not working
 **Problem**: Logs not rotating properly
@@ -227,10 +231,11 @@ git clone https://github.com/your-org/valops.git
 cd valops
 
 # Make scripts executable
-chmod +x env-init sync-bins validator-dashboard
+chmod +x setup-age-keys validator-init validator-up validator-down sync-bins validator-dashboard
 
 # Initialize environment
-./env-init
+./setup-age-keys
+./validator-init --encrypted-identity-key validator-identity.age --network testnet --user testnet-validator
 ```
 
 ## Testing Strategies
@@ -241,7 +246,7 @@ chmod +x env-init sync-bins validator-dashboard
 # Test user management functions
 source common.sh
 create_user "test-user"
-deploy_validator_operator "test-user"
+init_validator_operator "test-user" "testnet" "test-identity.age"
 clobber_validator_operator "test-user"
 clobber_user "test-user"
 ```
@@ -250,13 +255,14 @@ clobber_user "test-user"
 
 ```bash
 # Test complete deployment workflow
-./env-init
+./setup-age-keys
+./validator-init --encrypted-identity-key validator-identity.age --network testnet --user testnet-validator
 ./sync-bins
 
 # Test validator operations
-sudo -u testnet-validator /home/testnet-validator/run-validator &
+./validator-up --user testnet-validator
 sleep 10
-sudo -u testnet-validator /home/testnet-validator/halt-validator
+./validator-down --user testnet-validator
 
 # Test monitoring
 VALIDATOR_USER=testnet-validator ./validator-dashboard
@@ -266,8 +272,8 @@ VALIDATOR_USER=testnet-validator ./validator-dashboard
 
 ```bash
 # Test with different validator users
-./env-init
-deploy_validator_operator "mainnet-validator"
+source common.sh
+init_validator_operator "mainnet-validator" "mainnet" "mainnet-identity.age"
 VALIDATOR_USER=mainnet-validator ./validator-dashboard
 
 # Test error conditions
@@ -338,7 +344,8 @@ git checkout -b feature/new-functionality
 # Edit relevant files...
 
 # 3. Test changes
-./env-init  # Test environment setup
+./setup-age-keys  # Test age key setup
+./validator-init --encrypted-identity-key validator-identity.age --network testnet --user testnet-validator  # Test initialization
 ./sync-bins  # Test binary synchronization
 # Test specific functionality...
 
@@ -390,7 +397,8 @@ git push origin feature/new-functionality
 
 ```bash
 # Monitor script performance
-time ./env-init
+time ./validator-init --encrypted-identity-key validator-identity.age --network testnet --user testnet-validator
+time ./validator-up --user testnet-validator
 time ./sync-bins
 
 # Monitor resource usage
@@ -449,7 +457,7 @@ multipass exec dev-env -- sudo apt upgrade -y
 
 ```bash
 # Test backup procedures
-./env-init  # Should handle clean deployment
+./validator-init --encrypted-identity-key validator-identity.age --network testnet --user testnet-validator  # Should handle clean deployment
 ./sync-bins  # Should handle binary recovery
 
 # Test monitoring recovery

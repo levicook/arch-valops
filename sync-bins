@@ -7,13 +7,13 @@
 #
 # What it does:
 # - Connects to multipass 'dev-env' VM via SCP
-# - Syncs arch-cli and validator binaries to /usr/local/bin/
+# - Syncs validator binary to /usr/local/bin/
 # - Only overwrites files that have changed (efficient)
 #
 # Idempotent: Safe to run multiple times
-# Dependencies: 
+# Dependencies:
 # - Multipass dev-env VM must be running
-# - SSH access to VM configured  
+# - SSH access to VM configured
 # - Source binaries must exist in VM
 #
 set -euo pipefail
@@ -62,7 +62,7 @@ sync_bin() {
 }
 
 # Sync binaries
-sync_bin "/home/ubuntu/arch-network/target/release/arch-cli"
+# arch-cli binary no longer needed - validator binary handles all functionality
 sync_bin "/home/ubuntu/arch-network/target/release/validator"
 
 log_echo "✓ Sync complete!"

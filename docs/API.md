@@ -331,14 +331,29 @@ These functions are used internally by the infrastructure scripts and are genera
 ### `create_user(username)`
 Creates a validator user account with proper home directory setup.
 
-### `deploy_validator_operator(username)`
-Deploys validator runtime scripts and configuration for a user.
+### `init_validator_operator(username, network, encrypted_identity_key)`
+Complete one-time validator setup including user creation, directory structure, identity deployment, script deployment, and configuration setup.
+
+### `update_validator_operator(username, network)`
+Lightweight updates for existing validator setups including script updates and configuration refresh. Assumes initialization was already completed.
+
+### `stop_validator(username)`
+Gracefully stops the validator process using the halt-validator script with fallback to process termination.
+
+### `shred_validator_identities(username)`
+Securely destroys validator identity files using `shred -vfz` for complete data elimination.
 
 ### `clobber_validator_operator(username)`
-Removes validator scripts and configuration for a user.
+Removes validator scripts and configuration for a user, with secure identity file destruction.
 
 ### `clobber_user(username)`
 Completely removes a validator user account and all associated data.
+
+### `ensure_logrotate_enabled(username)`
+Configures log rotation for the specified validator user.
+
+### `ensure_gossip_enabled()`
+Configures firewall rules to allow gossip network traffic.
 
 ## Error Handling
 

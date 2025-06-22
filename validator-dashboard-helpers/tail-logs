@@ -3,6 +3,8 @@
 # tail-logs - Display live validator logs
 #
 set -euo pipefail
+source "$(dirname "$0")/../common.sh"
+cd "$PROJECT_ROOT"
 
 if [ -z "${VALIDATOR_USER:-}" ]; then
     echo "tail-logs: ERROR: VALIDATOR_USER not set"

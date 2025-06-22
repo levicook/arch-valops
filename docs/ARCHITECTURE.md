@@ -82,12 +82,12 @@ The Arch Network project includes a sophisticated Makefile-based build system th
 # In the dev-env VM - see all available targets
 make help
 
-# Build all main binaries (validator, arch-cli, bootnode, local_validator)
+# Build all main binaries (validator, bootnode, local_validator)
 make all
 
 # Build individual components
 make validator        # Build validator (release)
-make arch-cli         # Build arch-cli (release)
+# arch-cli is deprecated - validator binary now handles all functionality
 make bootnode         # Build bootnode (release)
 
 # Build debug versions for development
@@ -132,7 +132,7 @@ The `common.sh` library is designed for both operational use and testing/mainten
 
 ```bash
 # Production usage (automatic sourcing)
-./env-init  # Sources common.sh automatically
+./validator-init  # Sources common.sh automatically for initialization
 
 # Testing/maintenance usage (manual sourcing)
 source common.sh
@@ -173,29 +173,32 @@ common: ✓ Removed test-validator user
 
 ### 1. Initial Setup
 ```bash
-./env-init    # Create validator operator user and deploy resources
-./sync-bins   # Sync latest binaries from dev-env VM
+./setup-age-keys  # Setup encryption keys (one-time)
+./sync-bins       # Sync latest binaries from dev-env VM
+./validator-init --encrypted-identity-key validator-identity.age --network testnet --user testnet-validator  # Initialize validator
 ```
 
 ### 2. Development Iteration
 ```bash
-# After making changes to resources/* scripts
-./env-init    # Redeploy resources (always updates to latest)
-
 # After rebuilding binaries in dev-env VM
 ./sync-bins   # Sync latest binaries
+
+# Restart validator with updated binaries
+./validator-down --user testnet-validator
+./validator-up --user testnet-validator  # Automatically updates scripts
 ```
 
 ### 3. Validator Operations
 ```bash
-# Start validator (runs in foreground with full logging)
-sudo -u testnet-validator /home/testnet-validator/run-validator
+# Start validator (updates configuration and starts process)
+./validator-up --user testnet-validator
 
 # Stop validator (graceful shutdown with fallback to force)
-sudo -u testnet-validator /home/testnet-validator/halt-validator
+./validator-down --user testnet-validator
 
 # Check status
-ps aux | grep validator
+source common.sh
+is_validator_running "testnet-validator" && echo "Running" || echo "Stopped"
 
 # Monitor logs
 tail -f /home/testnet-validator/logs/validator.log
@@ -205,25 +208,62 @@ tail -f /home/testnet-validator/logs/validator.log
 
 ### Core Infrastructure Scripts
 
-#### `env-init`
-**Purpose**: Set up validator operator environment with deploy semantics
+#### `validator-init`
+**Purpose**: Complete one-time validator setup with encrypted identity deployment
 
 **What it does**:
-- Removes legacy `arch` user (cleanup from previous iterations)
-- Creates/updates `testnet-validator` user
-- Ensures proper directory structure exists (`data/`, `logs/`)
-- **Always deploys latest scripts** from `resources/` (deploy semantics)
-- Configures automatic log rotation (daily, 7-day retention)
+- Creates validator user account with proper permissions
+- Sets up directory structure (`data/`, `logs/`)
+- Deploys encrypted validator identity (required for all validators)
+- Deploys runtime scripts from `resources/`
+- Configures log rotation and firewall rules
+- Displays peer ID immediately after successful setup
+
+**Idempotency**: Safe to run multiple times (updates configuration)
+**Dependencies**: Age keys must be set up, encrypted identity file must exist
+
+#### `validator-up`
+**Purpose**: Start validator with automatic configuration updates
+
+**What it does**:
+- Updates validator scripts to latest versions (deploy semantics)
+- Refreshes log rotation and firewall configuration
+- Starts validator process in background with comprehensive logging
+- Ensures only one validator process runs per user
 
 **Idempotency**: Safe to run multiple times
-**Dependencies**: `resources/run-validator` must exist
+**Dependencies**: Validator must be initialized first
+
+#### `validator-down`
+**Purpose**: Stop validator with optional complete cleanup
+
+**What it does**:
+- Gracefully stops validator using halt-validator script
+- With `--clobber`: Securely destroys identity files and removes user
+- Comprehensive process termination with timeouts and fallbacks
+- Clear reporting of shutdown status
+
+**Idempotency**: Safe to run multiple times
+**Dependencies**: None (handles non-running validators gracefully)
+
+#### `setup-age-keys`
+**Purpose**: Initialize age encryption keys for secure identity management
+
+**What it does**:
+- Generates age keypair in `~/.valops/age/` directory
+- Creates secure directory structure with proper permissions
+- Displays public key for air-gapped identity generation
+- One-time setup required before validator initialization
+
+**Idempotency**: Safe to run multiple times (preserves existing keys)
+**Dependencies**: `age` command must be available
 
 #### `sync-bins`
 **Purpose**: Synchronize binaries from development VM to bare metal
 
 **What it does**:
 - Connects to multipass `dev-env` VM via SCP (robust vs multipass transfer)
-- Syncs `arch-cli` and `validator` binaries to `/usr/local/bin/`
+- Syncs `validator` binary to `/usr/local/bin/`
 - Only overwrites if files have changed (efficient, checksum-based)
 - Uses dynamic VM IP detection
 

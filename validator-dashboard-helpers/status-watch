@@ -3,6 +3,8 @@
 # status-watch - Continuous validator status monitoring using watch
 #
 set -euo pipefail
+source "$(dirname "$0")/../common.sh"
+cd "$PROJECT_ROOT"
 
 if [ -z "${VALIDATOR_USER:-}" ]; then
     echo "status-watch: ERROR: VALIDATOR_USER not set"

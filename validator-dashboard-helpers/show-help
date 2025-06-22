@@ -3,6 +3,8 @@
 # show-help - Operational guidance for validator monitoring
 #
 set -euo pipefail
+source "$(dirname "$0")/../common.sh"
+cd "$PROJECT_ROOT"
 
 # ANSI color codes
 GREEN='\033[0;32m'
@@ -36,7 +38,7 @@ echo
 echo -e "${CYAN}⚡ COMMON OPERATIONS:${NC}"
 echo "  • Restart validator: switch to validator user, run ./halt-validator then ./run-validator"
 echo "  • Update binaries: exit dashboard, run ./sync-bins, restart validator"
-echo "  • Redeploy environment: exit dashboard, run ./env-init"
+echo "  • Redeploy environment: exit dashboard, run ./validator-down && ./validator-up"
 echo "  • Check detailed logs: sudo su - \$VALIDATOR_USER, then grep/tail logs/"
 echo
 echo -e "${CYAN}🔧 TMUX NAVIGATION:${NC}"

@@ -338,7 +338,7 @@ echo "Block height: $BLOCK_HEIGHT"
    sudo -u testnet-validator ls -la /home/testnet-validator/
    
    # Verify binaries
-   which arch-cli validator
+   which validator
    ```
 
 2. **Review Startup Logs**

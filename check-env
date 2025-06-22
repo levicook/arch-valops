@@ -128,11 +128,22 @@ if check_command ufw; then
         fi
 
         # Check for validator ports
-        if echo "$UFW_STATUS" | grep -q "9002"; then
+        if echo "$UFW_STATUS" | grep "9002" | grep -q "127.0.0.1"; then
+            log_good "RPC port 9002 configured for localhost only"
+        elif echo "$UFW_STATUS" | grep -q "9002"; then
             log_warn "RPC port 9002 externally accessible"
             echo "   Review: Ensure this is intentional for external RPC access"
         else
-            log_good "RPC port 9002 not externally exposed"
+            log_warn "RPC port 9002 not configured (will block validator operations)"
+            echo "   Note: validator-init will configure this automatically"
+        fi
+
+        # Check for gossip port (critical for validator operation)
+        if echo "$UFW_STATUS" | grep -q "29001/tcp"; then
+            log_good "Gossip port 29001 configured for peer communication"
+        else
+            log_bad "Gossip port 29001 not configured - validator cannot join network"
+            echo "   Critical: Run ./validator-init to configure validator networking"
         fi
 
         # Count total rules
@@ -249,7 +260,7 @@ if id testnet-validator >/dev/null 2>&1; then
         log_good "Validator user has no sudo privileges"
     fi
 else
-    log_info "Validator user not yet created (run ./env-init)"
+    log_info "Validator user not yet created (run ./validator-init)"
 fi
 
 echo

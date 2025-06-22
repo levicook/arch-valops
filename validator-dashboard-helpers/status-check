@@ -3,10 +3,8 @@
 # status-check - Status information script for watch command
 #
 set -euo pipefail
-
-# Source common utilities
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/../common.sh"
+source "$(dirname "$0")/../common.sh"
+cd "$PROJECT_ROOT"
 
 if [ -z "${VALIDATOR_USER:-}" ]; then
     echo "status-check: ERROR: VALIDATOR_USER not set"
@@ -25,6 +23,8 @@ PID=$(get_validator_pid "$VALIDATOR_USER")
 PID_COUNT=$(get_validator_pid_count "$VALIDATOR_USER")
 UPTIME=$(get_validator_uptime "$VALIDATOR_USER" "$PID")
 BLOCK_HEIGHT=$(get_block_height)
+NODE_READY=$(is_node_ready)
+BEST_BLOCK_HASH=$(get_best_block_hash)
 TITAN_STATUS=$(get_titan_connection_status "$VALIDATOR_USER")
 RECENT_SLOT=$(get_recent_slot "$VALIDATOR_USER")
 ERROR_COUNT=$(get_error_count "$VALIDATOR_USER")
@@ -34,6 +34,7 @@ RESTART_COUNT=$(get_restart_count "$VALIDATOR_USER")
 LAST_RESTART=$(get_last_restart "$VALIDATOR_USER")
 DATA_SIZES=$(get_data_sizes "$VALIDATOR_USER")
 RECENT_LOGS=$(get_recent_log_lines "$VALIDATOR_USER" 2)
+TELEMETRY_ERRORS=$(get_telemetry_error_count "$VALIDATOR_USER")
 
 # Parse data sizes
 LEDGER_SIZE=$(echo "$DATA_SIZES" | cut -d'|' -f1)
@@ -61,9 +62,11 @@ else
     echo -e "  ${RED}❌ RPC port not listening${NC}"
 fi
 
-# Quick RPC health check using working method
-if [ "$BLOCK_HEIGHT" != "unknown" ]; then
-    echo -e "  ${GREEN}✅ RPC responding${NC}"
+# Enhanced RPC health check using proper node readiness
+if [ "$NODE_READY" = "true" ]; then
+    echo -e "  ${GREEN}✅ Node ready and responding${NC}"
+elif [ "$BLOCK_HEIGHT" != "unknown" ]; then
+    echo -e "  ${YELLOW}⚠ RPC responding but node not fully ready${NC}"
 else
     RPC_RESPONSE=$(get_rpc_response "get_block_count")
     if echo "$RPC_RESPONSE" | jq -e '.error' >/dev/null 2>&1; then
@@ -90,9 +93,15 @@ case "$TITAN_STATUS" in
     ;;
 esac
 
-# Get local block height
+# Get local block height and hash information
 if [ "$BLOCK_HEIGHT" != "unknown" ] && [ "$BLOCK_HEIGHT" != "null" ]; then
     echo -e "  ${GREEN}✅ Local block height: $BLOCK_HEIGHT${NC}"
+    
+    # Show best block hash (truncated for readability)
+    if [ "$BEST_BLOCK_HASH" != "unknown" ] && [ "$BEST_BLOCK_HASH" != "null" ]; then
+        HASH_SHORT=$(echo "$BEST_BLOCK_HASH" | cut -c1-16)...
+        echo -e "  ${GREEN}✅ Best block hash: $HASH_SHORT${NC}"
+    fi
 
     # Check if block height is progressing (compare with recent log activity)
     if [ "$RECENT_SLOT" != "unknown" ] && [ "$RECENT_SLOT" != "" ]; then
@@ -122,6 +131,11 @@ if [ "$ERROR_COUNT" -gt 0 ] && [ -n "$LAST_ERROR" ]; then
     echo "  Last error: $(echo "$LAST_ERROR" | cut -c1-80)..."
 else
     echo -e "  ${GREEN}✅ No recent errors${NC}"
+fi
+
+# Show telemetry noise count (filtered from main logs)
+if [ "$TELEMETRY_ERRORS" -gt 0 ]; then
+    echo -e "  ${BLUE}ℹ️ Telemetry noise: $TELEMETRY_ERRORS messages (filtered from display)${NC}"
 fi
 
 # Restart detection

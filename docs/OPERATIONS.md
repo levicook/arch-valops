@@ -7,10 +7,10 @@ This guide covers day-to-day operational procedures for managing Arch Network va
 ```bash
 # Essential commands for daily operations
 ./check-env                                   # Security assessment (run first)
-./env-init                                    # Deploy/update environment
-./sync-bins                                   # Sync latest binaries
-sudo -u testnet-validator ./resources/run-validator    # Start validator
-sudo -u testnet-validator ./resources/halt-validator   # Stop validator
+./setup-age-keys                              # Setup encryption keys (one-time)
+./validator-init --encrypted-identity-key validator-identity.age --network testnet --user testnet-validator  # Initialize (one-time)
+./validator-up --user testnet-validator      # Start validator
+./validator-down --user testnet-validator    # Stop validator
 VALIDATOR_USER=testnet-validator ./validator-dashboard # Monitor
 ```
 
@@ -43,41 +43,45 @@ This tool evaluates SSH security, firewall configuration, intrusion prevention, 
 # 1. Assess host security (recommended first step)
 ./check-env
 
-# 2. Deploy validator environment (creates user, directories, scripts)
-./env-init
+# 2. Setup age encryption keys (one-time)
+./setup-age-keys
 
 # 3. Sync binaries from development VM
 ./sync-bins
 
-# 4. Verify deployment
+# 4. Initialize validator with encrypted identity (one-time)
+./validator-init --encrypted-identity-key validator-identity.age --network testnet --user testnet-validator
+
+# 5. Verify deployment
 sudo -u testnet-validator ls -la /home/testnet-validator/
-which arch-cli validator
+which validator
 ```
 
 ### Environment Updates
 
 ```bash
-# Update deployed scripts (after modifying resources/)
-./env-init  # Always safe to run - uses deploy semantics
+# Update deployed scripts and configuration (automatic during startup)
+./validator-down --user testnet-validator
+./validator-up --user testnet-validator  # Updates scripts automatically
 
 # Update binaries (after rebuilding in dev-env)
 ./sync-bins  # Only transfers if binaries changed
+./validator-down --user testnet-validator
+./validator-up --user testnet-validator  # Restart with new binaries
 
 # Verify updates
-ls -la /usr/local/bin/{arch-cli,validator}
+ls -la /usr/local/bin/validator
 sudo -u testnet-validator ls -la /home/testnet-validator/{run-validator,halt-validator}
 ```
 
 ### Environment Cleanup
 
 ```bash
-# Remove validator operator (keeps user account)
-source common.sh
-clobber_validator_operator "testnet-validator"
+# Stop validator only
+./validator-down --user testnet-validator
 
 # Complete removal (deletes user and all data)
-source common.sh
-clobber_user "testnet-validator"
+./validator-down --clobber --user testnet-validator
 ```
 
 ## Validator Lifecycle Management
@@ -86,28 +90,23 @@ clobber_user "testnet-validator"
 
 **Standard Startup:**
 ```bash
-# Start validator (runs in foreground with full logging)
-sudo -u testnet-validator /home/testnet-validator/run-validator
+# Start validator (updates configuration and starts process)
+./validator-up --user testnet-validator
 ```
 
-**Background Startup:**
-```bash
-# Start validator in background
-sudo -u testnet-validator nohup /home/testnet-validator/run-validator > /dev/null 2>&1 &
-
-# Or use screen/tmux for persistent sessions
-sudo -u testnet-validator screen -dmS validator /home/testnet-validator/run-validator
-```
+**What this does:**
+- Updates validator scripts to latest versions
+- Refreshes log rotation and firewall configuration
+- Starts the validator process in the background
 
 **Startup Verification:**
 ```bash
 # Check process status
 source common.sh
-export VALIDATOR_USER=testnet-validator
-is_validator_running "$VALIDATOR_USER" && echo "Running" || echo "Stopped"
+is_validator_running "testnet-validator" && echo "Running" || echo "Stopped"
 
 # Get process details
-PID=$(get_validator_pid "$VALIDATOR_USER")
+PID=$(get_validator_pid "testnet-validator")
 echo "Validator PID: $PID"
 
 # Check RPC endpoint
@@ -120,26 +119,24 @@ curl -X POST -H "Content-Type: application/json" \
 
 **Graceful Shutdown:**
 ```bash
-# Recommended method (handles multiple processes, timeouts, fallbacks)
-sudo -u testnet-validator /home/testnet-validator/halt-validator
+# Recommended method (uses halt-validator script with timeouts and fallbacks)
+./validator-down --user testnet-validator
 ```
 
-**Manual Shutdown:**
+**Manual Shutdown (if needed):**
 ```bash
-# Find validator processes
-sudo -u testnet-validator pgrep -f arch-cli
+# Direct halt-validator call
+sudo su - testnet-validator -c "./halt-validator"
 
-# Graceful termination
-sudo -u testnet-validator pkill -TERM -f arch-cli
-
-# Force termination (if needed)
-sudo -u testnet-validator pkill -KILL -f arch-cli
+# Manual process termination
+sudo su - testnet-validator -c "pkill -TERM -f '^validator --network-mode'"
 ```
 
 **Shutdown Verification:**
 ```bash
 # Verify all processes stopped
-sudo -u testnet-validator pgrep -f arch-cli || echo "All stopped"
+source common.sh
+is_validator_running "testnet-validator" || echo "All stopped"
 
 # Check RPC endpoint is down
 curl -X POST -H "Content-Type: application/json" \
@@ -151,32 +148,21 @@ curl -X POST -H "Content-Type: application/json" \
 
 **Standard Restart:**
 ```bash
-# Stop validator
-sudo -u testnet-validator /home/testnet-validator/halt-validator
-
-# Wait for complete shutdown
-sleep 5
-
-# Start validator
-sudo -u testnet-validator /home/testnet-validator/run-validator
+# Stop and start
+./validator-down --user testnet-validator
+./validator-up --user testnet-validator
 ```
 
-**Quick Restart (for configuration changes):**
+**Quick Status Check:**
 ```bash
-# Combined restart script
-sudo -u testnet-validator bash -c "
-  /home/testnet-validator/halt-validator
-  sleep 3
-  /home/testnet-validator/run-validator
-"
-```
-
-**Emergency Restart (if validator is unresponsive):**
-```bash
-# Nuclear option - force kill all validator processes
-sudo pkill -KILL -f "arch-cli.*validator"
-sleep 2
-sudo -u testnet-validator /home/testnet-validator/run-validator
+# Check if restart is needed
+source common.sh
+if is_validator_running "testnet-validator"; then
+    echo "Validator is running"
+else
+    echo "Validator needs to be started"
+    ./validator-up --user testnet-validator
+fi
 ```
 
 ## Configuration Management
@@ -265,7 +251,7 @@ grep ERROR /home/testnet-validator/logs/validator.log* | tail -20
 grep -i titan /home/testnet-validator/logs/validator.log* | tail -10
 
 # Startup/shutdown events
-grep -E "run-validator:|halt-validator:" /home/testnet-validator/logs/validator.log* | tail -10
+grep -E "validator-up:|validator-down:" /home/testnet-validator/logs/validator.log* | tail -10
 
 # Slot processing activity
 grep "slot [0-9]*" /home/testnet-validator/logs/validator.log | tail -20
@@ -398,12 +384,11 @@ sudo sysctl -p
 **Monitor Validator Metrics:**
 ```bash
 source common.sh
-export VALIDATOR_USER=testnet-validator
 
 # Check processing performance
 echo "Block height: $(get_block_height)"
-echo "Recent slot: $(get_recent_slot "$VALIDATOR_USER")"
-echo "Error rate: $(get_recent_error_count "$VALIDATOR_USER") per hour"
+echo "Recent slot: $(get_recent_slot "testnet-validator")"
+echo "Error rate: $(get_recent_error_count "testnet-validator") per hour"
 ```
 
 **Performance Tuning:**
@@ -448,10 +433,10 @@ sudo iptables -L | grep -E "(9002|3030)"
 **Important:** Validator signing keys are managed separately from this infrastructure. The valops toolkit never handles cryptocurrency keys.
 
 ```bash
-# Verify no private keys in validator directories
-sudo -u testnet-validator find /home/testnet-validator/ -name "*.key" -o -name "*.pem"
+# Verify identity files are properly secured
+sudo -u testnet-validator find /home/testnet-validator/ -name "identity-secret" -exec ls -la {} \;
 
-# Check for any credential files
+# Check for any unexpected credential files
 sudo -u testnet-validator find /home/testnet-validator/ -name "*secret*" -o -name "*private*"
 ```
 
@@ -483,11 +468,10 @@ sudo netstat -tulnp | grep -E "(9002|3030)"
 ```bash
 # Quick status check
 source common.sh
-export VALIDATOR_USER=testnet-validator
 ./validator-dashboard-helpers/status-check
 
 # Verify key metrics
-echo "Process: $(is_validator_running "$VALIDATOR_USER" && echo "✓" || echo "✗")"
+echo "Process: $(is_validator_running "testnet-validator" && echo "✓" || echo "✗")"
 echo "RPC: $(is_rpc_listening && echo "✓" || echo "✗")"
 echo "Block: $(get_block_height)"
 ```
@@ -514,8 +498,8 @@ sudo apt update && sudo apt upgrade -y
 ./sync-bins
 
 # 3. Restart validator if binaries changed
-sudo -u testnet-validator /home/testnet-validator/halt-validator
-sudo -u testnet-validator /home/testnet-validator/run-validator
+./validator-down --user testnet-validator
+./validator-up --user testnet-validator
 ```
 
 **Performance Review:**
@@ -527,7 +511,8 @@ du -sh /home/testnet-validator/data/.arch_data/testnet/ledger
 grep ERROR /home/testnet-validator/logs/validator.log* | wc -l
 
 # Check restart frequency
-grep -E "run-validator:|halt-validator:" /home/testnet-validator/logs/validator.log* | wc -l
+source common.sh
+echo "Restarts: $(get_restart_count "testnet-validator")"
 ```
 
 ### Monthly Maintenance
@@ -541,10 +526,9 @@ uptime  # System load
 
 # Validator-specific checks
 source common.sh
-export VALIDATOR_USER=testnet-validator
-echo "Restarts: $(get_restart_count "$VALIDATOR_USER")"
-echo "Total errors: $(get_error_count "$VALIDATOR_USER")"
-echo "Data size: $(get_data_sizes "$VALIDATOR_USER")"
+echo "Restarts: $(get_restart_count "testnet-validator")"
+echo "Total errors: $(get_error_count "testnet-validator")"
+echo "Data size: $(get_data_sizes "testnet-validator")"
 ```
 
 **Configuration Review:**
@@ -574,7 +558,7 @@ mkdir -p "$BACKUP_DIR"
 
 # Copy configuration and scripts
 cp -r resources/ "$BACKUP_DIR/"
-cp common.sh env-init sync-bins validator-dashboard "$BACKUP_DIR/"
+cp common.sh setup-age-keys validator-init validator-up validator-down sync-bins validator-dashboard "$BACKUP_DIR/"
 
 # Copy validator-specific configuration
 sudo cp -r /home/testnet-validator/{run-validator,halt-validator} "$BACKUP_DIR/" 2>/dev/null || true
@@ -584,9 +568,9 @@ sudo cp /etc/logrotate.d/validator-testnet-validator "$BACKUP_DIR/" 2>/dev/null 
 cat << 'EOF' > "$BACKUP_DIR/RECOVERY.md"
 # Validator Recovery Procedure
 
-1. Deploy environment: ./env-init
-2. Sync binaries: ./sync-bins
-3. Start validator: sudo -u testnet-validator ./run-validator
+1. Setup age keys: ./setup-age-keys
+2. Initialize validator: ./validator-init --encrypted-identity-key validator-identity.age --network testnet --user testnet-validator
+3. Start validator: ./validator-up --user testnet-validator
 4. Monitor: VALIDATOR_USER=testnet-validator ./validator-dashboard
 EOF
 
@@ -603,90 +587,142 @@ echo "Recovery package created: $BACKUP_DIR.tar.gz"
 tar -xzf validator-recovery-*.tar.gz
 cd validator-recovery-*/
 
-# 2. Deploy environment
-./env-init
+# 2. Setup age keys (if not already done)
+./setup-age-keys
 
-# 3. Sync binaries
-./sync-bins
+# 3. Initialize validator
+./validator-init --encrypted-identity-key validator-identity.age --network testnet --user testnet-validator
 
 # 4. Start validator
-sudo -u testnet-validator /home/testnet-validator/run-validator
+./validator-up --user testnet-validator
 
 # 5. Verify operation
-VALIDATOR_USER=testnet-validator ./validator-dashboard-helpers/status-check
+./validator-dashboard-helpers/status-check
 ```
 
 **Partial Recovery (Configuration Only):**
 ```bash
-# Redeploy scripts and configuration
-./env-init
-
-# Restart validator with new configuration
-sudo -u testnet-validator /home/testnet-validator/halt-validator
-sudo -u testnet-validator /home/testnet-validator/run-validator
+# Restart validator to refresh configuration
+./validator-down --user testnet-validator
+./validator-up --user testnet-validator
 ```
 
 ## Troubleshooting Common Issues
 
 ### Validator Won't Start
 
-**Symptoms:** Process starts but immediately exits
+**Symptoms:** `validator-up` fails or process starts but immediately exits
 ```bash
-# Check recent startup logs
-grep "run-validator:" /home/testnet-validator/logs/validator.log | tail -5
+# Check initialization status
+sudo -u testnet-validator ls -la /home/testnet-validator/
 
-# Check for permission issues
-sudo -u testnet-validator ls -la /home/testnet-validator/data/
+# Check recent startup logs
+grep "validator-up:" /home/testnet-validator/logs/validator.log | tail -5
 
 # Verify binary integrity
-which arch-cli validator
-arch-cli --version 2>/dev/null || echo "Binary issue"
+which validator
+validator --version 2>/dev/null || echo "Binary issue"
 ```
 
 **Solutions:**
-1. Verify environment setup: `./env-init`
+1. Verify initialization: `./validator-init --encrypted-identity-key validator-identity.age --network testnet --user testnet-validator`
 2. Check binary installation: `./sync-bins`
 3. Review configuration: Check environment variables
 4. Check disk space: `df -h`
 
 ### High Resource Usage
 
-**Symptoms:** High CPU/memory usage, slow system response
+**Symptoms:** High CPU, memory, or disk usage
 ```bash
 # Monitor resource usage
-htop -u testnet-validator
-sudo iotop -u testnet-validator
-
-# Check for multiple processes
 source common.sh
-export VALIDATOR_USER=testnet-validator
-echo "Process count: $(get_validator_pid_count "$VALIDATOR_USER")"
+htop -u testnet-validator
+
+# Check validator metrics
+echo "Process count: $(get_validator_pid_count "testnet-validator")"
+echo "Data size: $(get_data_sizes "testnet-validator")"
 ```
 
 **Solutions:**
-1. Check for multiple validator processes
-2. Review system resources and other processes
-3. Consider hardware upgrades
-4. Optimize validator configuration
+1. Check for multiple processes: Only one validator should be running
+2. Review log growth: Large logs can consume significant resources
+3. Monitor data directory growth: Consider cleanup procedures
+4. Optimize system settings: Adjust file descriptors and network settings
 
 ### Network Connectivity Issues
 
-**Symptoms:** RPC timeouts, Titan disconnections
+**Symptoms:** RPC not responding, network connection errors
 ```bash
-# Test network connectivity
-curl -s https://titan-public-http.test.arch.network | head -5
-nc -zv titan-public-tcp.test.arch.network 3030
+# Check network status
+source common.sh
+is_rpc_listening && echo "RPC OK" || echo "RPC DOWN"
+echo "Titan status: $(get_titan_connection_status "testnet-validator")"
 
-# Check local RPC
-curl -X POST -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"get_block_count","params":[],"id":1}' \
-  http://127.0.0.1:9002/
+# Check firewall
+sudo ufw status
 ```
 
 **Solutions:**
-1. Check firewall settings
-2. Verify network configuration
-3. Test with different endpoints
-4. Review validator logs for network errors
+1. Verify firewall configuration: `./validator-up` refreshes firewall rules
+2. Check network endpoints: Verify titan endpoints are reachable
+3. Review RPC binding: Ensure correct IP and port configuration
+4. Restart validator: `./validator-down --user testnet-validator && ./validator-up --user testnet-validator`
 
-This operations guide provides comprehensive procedures for managing your Arch Network validator efficiently and securely. 
+### Identity/Authentication Issues
+
+**Symptoms:** Identity deployment failures, peer ID mismatches
+```bash
+# Check identity files
+sudo -u testnet-validator find /home/testnet-validator/data/.arch_data/ -name "identity-secret"
+
+# Verify age keys
+ls -la ~/.valops/age/
+```
+
+**Solutions:**
+1. Verify age keys: `./setup-age-keys`
+2. Re-initialize if needed: `./validator-down --clobber --user testnet-validator` then re-init
+3. Check encrypted identity file integrity
+4. Verify correct public key was used for encryption
+
+## Interactive Operations
+
+### Using common.sh Functions
+
+```bash
+# Source the library for interactive use
+source common.sh
+
+# Check validator status
+is_validator_running "testnet-validator" && echo "Running" || echo "Stopped"
+
+# Get process information
+get_validator_pid "testnet-validator"
+get_validator_uptime "testnet-validator" "$(get_validator_pid "testnet-validator")"
+
+# Stop validator manually
+stop_validator "testnet-validator"
+
+# Security operations
+shred_validator_identities "testnet-validator"  # Secure cleanup
+```
+
+### Advanced Operations
+
+```bash
+# Multiple validator management
+for user in testnet-validator mainnet-validator; do
+    if is_validator_running "$user"; then
+        echo "$user: Running (PID: $(get_validator_pid "$user"))"
+    else
+        echo "$user: Stopped"
+    fi
+done
+
+# Bulk operations
+source common.sh
+./validator-down --user testnet-validator
+./validator-up --user testnet-validator
+```
+
+This comprehensive operations guide provides everything needed for day-to-day validator management using the new architecture while maintaining the same level of operational excellence. 

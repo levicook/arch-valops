@@ -1,0 +1,63 @@
+#!/bin/bash
+set -euo pipefail
+source "$(dirname "$0")/common.sh"
+cd "$PROJECT_ROOT"
+
+# Setup age encryption keys for validator identity deployment
+# This creates the host keypair that will be used to decrypt validator identities
+
+AGE_DIR="$HOME/.valops/age"
+PRIVATE_KEY_FILE="$AGE_DIR/host-identity.key"
+PUBLIC_KEY_FILE="$AGE_DIR/host-identity.pub"
+
+echo "=== Setting up Age encryption keys ==="
+echo "Key directory: $AGE_DIR"
+echo
+
+# Check if age is installed
+if ! command -v age >/dev/null 2>&1; then
+    echo "ERROR: age is not installed"
+    echo "Install with: sudo apt install age"
+    exit 1
+fi
+
+# Create age directory with restrictive permissions (like .ssh)
+mkdir -p "$AGE_DIR"
+chmod 700 "$AGE_DIR"
+
+# Generate keypair if it doesn't exist
+if [[ -f "$PRIVATE_KEY_FILE" ]]; then
+    echo "✓ Age keys already exist"
+    echo "Private key: $PRIVATE_KEY_FILE"
+    echo "Public key: $PUBLIC_KEY_FILE"
+else
+    echo "Generating new age keypair..."
+
+    # Generate private key
+    age-keygen -o "$PRIVATE_KEY_FILE"
+
+    # Extract public key
+    age-keygen -y "$PRIVATE_KEY_FILE" >"$PUBLIC_KEY_FILE"
+
+    echo "✓ Generated new age keypair"
+fi
+
+# Set secure permissions (like SSH keys)
+chmod 600 "$PRIVATE_KEY_FILE"
+chmod 644 "$PUBLIC_KEY_FILE"
+
+# Display public key for use in identity generation
+echo
+echo "=== Host Public Key (for identity encryption) ==="
+cat "$PUBLIC_KEY_FILE"
+echo
+echo "📋 INSTRUCTIONS:"
+echo "1. Use the public key above as the recipient when encrypting validator identities"
+echo "2. Example encryption command:"
+echo "   age -r \"\$(cat $PUBLIC_KEY_FILE)\" -o validator-identity.tar.gz.age validator-identity.tar.gz"
+echo
+echo "⚠️  SECURITY:"
+echo "• Private key is stored at: $PRIVATE_KEY_FILE"
+echo "• Directory has 700 permissions (like ~/.ssh)"
+echo "• Private key has 600 permissions"
+echo "• Keep the public key for identity preparation workflows"
