@@ -138,7 +138,7 @@ deploy_validator_identity() {
 
     # Verify age keys exist
     if [[ ! -f "$HOME/.valops/age/host-identity.key" ]]; then
-        log_error "✗ Age private key not found. Run: ./setup-age-keys"
+        log_error "✗ Age private key not found. Run: setup-age-keys"
         return 1
     fi
 
@@ -228,7 +228,7 @@ backup_validator_identity() {
     # Verify age infrastructure exists
     local age_dir="$HOME/.valops/age"
     if [[ ! -f "$age_dir/host-identity.pub" ]]; then
-        log_error "✗ Age keys not found. Run: ./setup-age-keys"
+        log_error "✗ Age keys not found. Run: setup-age-keys"
         return 1
     fi
 
@@ -298,7 +298,7 @@ backup_all_identities() {
     # Verify age infrastructure exists
     local age_dir="$HOME/.valops/age"
     if [[ ! -f "$age_dir/host-identity.pub" ]]; then
-        log_error "✗ Age keys not found. Run: ./setup-age-keys"
+        log_error "✗ Age keys not found. Run: setup-age-keys"
         return 1
     fi
 

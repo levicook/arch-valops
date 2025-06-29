@@ -112,7 +112,7 @@ fi
 
 AGE_DIR="$HOME/.valops/age"
 if [[ ! -f "$AGE_DIR/host-identity.key" ]] || [[ ! -f "$AGE_DIR/host-identity.pub" ]]; then
-    log_echo "✗ Age keys not found. Run: ./setup-age-keys first"
+    log_echo "✗ Age keys not found. Run: setup-age-keys first"
     exit 1
 fi
 

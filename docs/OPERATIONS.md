@@ -1,829 +1,267 @@
-# Validator Operations Guide
+# Operations Guide
 
-This guide covers day-to-day operational procedures for managing Arch Network validators using the valops toolkit.
+👔 **For**: Production operators managing Arch Network validators
+🎯 **Focus**: Daily management, maintenance, troubleshooting
 
 ## Quick Reference
 
 ```bash
-# Essential commands for daily operations
-./check-env                                   # Security assessment (run first)
-./setup-age-keys                              # Setup encryption keys (one-time)
-./validator-init --encrypted-identity-key validator-identity.age --network testnet --user testnet-validator  # Initialize (one-time)
-./backup-identities --user testnet-validator # Create identity backups
-./validator-up --user testnet-validator      # Start validator
-./validator-down --user testnet-validator    # Stop validator
-VALIDATOR_USER=testnet-validator ./validator-dashboard # Monitor
+# Daily operations (with pre-configured environment)
+cd validators/testnet && validator-dashboard  # Monitor validator
+validator-up                          # Start validator
+validator-down                        # Stop validator
+validator-down --clobber              # Complete removal (with backup)
+
+# Or using environment variables
+VALIDATOR_USER=testnet-validator validator-dashboard
+VALIDATOR_USER=testnet-validator validator-up
+VALIDATOR_USER=testnet-validator validator-down
+
+# Binary updates
+ARCH_VERSION=v0.5.3 sync-arch-bins    # Update Arch binaries
+BITCOIN_VERSION=29.0 sync-bitcoin-bins # Update Bitcoin binaries
+sync-titan-bins                       # Update Titan binary
+
+# Health checks
+tail -f /home/$VALIDATOR_USER/logs/validator.log  # Live logs (set VALIDATOR_USER first)
+curl -X POST -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"get_block_count","params":[],"id":1}' http://127.0.0.1:9002/  # Test RPC
 ```
 
-## Identity Management
+## Validator Lifecycle
 
-### Creating Encrypted Backups
-
-Identity backups are automatically created during initialization and can be created manually:
-
+### Starting
 ```bash
-# Create encrypted backups of all validator identities
-./backup-identities --user testnet-validator
+# Standard startup (updates configs, starts process)
+validator-up
+
+# Verify startup
+validator-dashboard  # Check status window
 ```
 
-**What this does:**
-- Automatically discovers ALL identity files in validator's data directory
-- Reads each `identity-secret` file found (testnet, devnet, mainnet, etc.)
-- Encrypts each using the host's age public key
-- Saves as `~/.valops/age/identity-backup-{peer-id}.age`
-- Uses each validator's peer ID as the filename for uniqueness
-- Backup is idempotent (won't overwrite existing backups)
-- Reports summary of successful/failed backups
-
-**Backup Strategy:**
+### Stopping
 ```bash
-# List all identity backups
-ls -la ~/.valops/age/identity-backup-*.age
+# Graceful shutdown
+validator-down
 
-# Complete backup approach: Back up the entire age directory
-tar -czf valops-age-backup-$(date +%Y%m%d).tar.gz ~/.valops/age/
+# Force stop if needed
+sudo pkill -f validator
 ```
 
-**Recovery from Backup:**
+### Restarting
 ```bash
-# Use backup file with validator-init on same or different host
-./validator-init --encrypted-identity-key ~/.valops/age/identity-backup-{peer-id}.age --network testnet --user testnet-validator
+# Standard restart
+validator-down && validator-up
+
+# Emergency restart (manual process management - no systemd)
+sudo pkill -f validator && validator-up  # Force restart
 ```
 
-> **Design Note: No Separate Restore Process**
->
-> The backup system is intentionally designed with perfect symmetry - backup files are created in exactly the same `.age` format as original encrypted identity files. This means:
-> - **No special restore command needed** - `validator-init` handles both original deployments and restores
-> - **Perfect interoperability** - backup files work identically to original encrypted keys
-> - **Simple disaster recovery** - same process whether using original key or backup
-> - **Reduced complexity** - one encryption format, one deployment process
->
-> This architectural choice eliminates the complexity of separate backup/restore workflows while maintaining complete functionality.
+## Binary Management
 
-### Disaster Recovery
-
-To restore a validator on a new host:
-
-1. Copy `~/.valops/age/` directory to new host
-2. Run `./setup-age-keys` to ensure age infrastructure exists
-3. Use backup file: `./validator-init --encrypted-identity-key ~/.valops/age/identity-backup-{peer-id}.age --network testnet --user testnet-validator`
-
-## Security Assessment
-
-Before deploying or operating validators, assess the host security posture:
-
+### Production Updates
 ```bash
-# Run comprehensive security assessment
-./check-env
+# Update to specific versions (recommended)
+ARCH_VERSION=v0.5.3 sync-arch-bins
+BITCOIN_VERSION=29.0 sync-bitcoin-bins
+
+# Restart to use new binaries
+validator-down && validator-up
 ```
 
-This tool evaluates SSH security, firewall configuration, intrusion prevention, system updates, user security, network security, system hardening, and file system security. Address any critical issues before proceeding with validator deployment.
-
-**Key Security Checks:**
-- SSH configuration and effective settings
-- Firewall rules and port exposure
-- Intrusion prevention (fail2ban) status
-- System update currency and automation
-- User privilege isolation
-- Network service exposure
-- Kernel security hardening
-- File system permissions
-
-## Environment Management
-
-### Initial Deployment
-
+### Development Updates
 ```bash
-# 1. Assess host security (recommended first step)
-./check-env
-
-# 2. Setup age encryption keys (one-time)
-./setup-age-keys
-
-# 3. Sync binaries from development VM
-SYNC_STRATEGY_ARCH=vm sync-arch-bins       # Arch binaries from dev VM
-SYNC_STRATEGY_BITCOIN=vm sync-bitcoin-bins # Bitcoin binaries from dev VM
-sync-titan-bins                            # Titan binary from dev VM
-
-# 4. Initialize validator with encrypted identity (one-time)
-./validator-init --encrypted-identity-key validator-identity.age --network testnet --user testnet-validator
-
-# 5. Verify deployment
-sudo -u testnet-validator ls -la /home/testnet-validator/
-which validator
-```
-
-### Environment Updates
-
-```bash
-# Update deployed scripts and configuration (automatic during startup)
-./validator-down --user testnet-validator
-./validator-up --user testnet-validator  # Updates scripts automatically
-
-# Update binaries (after rebuilding in dev-env)
-# Sync all binaries (only transfers if changed)
+# Sync from development VM
 SYNC_STRATEGY_ARCH=vm sync-arch-bins
 SYNC_STRATEGY_BITCOIN=vm sync-bitcoin-bins
 sync-titan-bins
-./validator-down --user testnet-validator
-./validator-up --user testnet-validator  # Restart with new binaries
 
-# Verify updates
-ls -la /usr/local/bin/validator
-sudo -u testnet-validator ls -la /home/testnet-validator/{run-validator,halt-validator}
+# Restart validator
+validator-down && validator-up
 ```
 
-### Environment Cleanup
+**See [MANAGEMENT.md](MANAGEMENT.md) for complete binary management guide.**
 
+## Monitoring
+
+### Dashboard
 ```bash
-# Stop validator only
-./validator-down --user testnet-validator
+# Start monitoring dashboard
+validator-dashboard
 
-# Complete removal (deletes user and all data)
-# WARNING: Creates emergency backup before destruction
-./validator-down --clobber --user testnet-validator
+# Navigation
+# Ctrl+b + n/p  - Switch windows
+# Ctrl+b + d    - Detach (keeps running)
+# Ctrl+b + arrows - Switch panes
 ```
 
-**Enhanced Clobber Safety:**
-
-The `--clobber` operation includes automatic safety mechanisms:
-
-1. **Emergency Backup**: Automatically creates backup of ALL identities before destruction
-2. **Warning with Abort Window**: Shows clear warning with 3-second countdown to abort
-3. **Fail-Safe Logic**: Refuses to destroy if backup creation fails
-4. **Complete Preservation**: All identities (testnet, mainnet, devnet) are backed up
-
-**What happens during clobber:**
+### Manual Health Checks
 ```bash
-./validator-down --clobber --user testnet-validator
-# Output:
-# WARNING: About to completely remove validator 'testnet-validator'
-#   This will delete: user account, home directory, and ALL data
-# Creating emergency backup before removal...
-# ✓ All identity backups completed
-# ✓ Emergency backup(s) created before removal
-#
-# Proceeding with complete removal in 3 seconds...
-# Press Ctrl+C to abort!
+# Process status
+ps aux | grep validator
+
+# RPC health
+curl -X POST -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"get_block_count","params":[],"id":1}' http://127.0.0.1:9002/
+
+# Log analysis
+tail -20 /home/testnet-validator/logs/validator.log
+grep ERROR /home/testnet-validator/logs/validator.log | tail -10
 ```
 
-**Recovery after clobber:**
+### Key Metrics to Monitor
+- **Process**: Validator running, single instance
+- **RPC**: Port 9002 responding
+- **Network**: Connected to Titan endpoints
+- **Disk**: Data directory growth
+- **Logs**: No recurring errors
+
+**See [OBSERVABILITY.md](OBSERVABILITY.md) for comprehensive monitoring setup.**
+
+## Maintenance Tasks
+
+### Daily
+- Check dashboard for errors
+- Verify RPC connectivity
+- Monitor log for unusual activity
+
+### Weekly
 ```bash
-# Restore from auto-created backup
-./validator-init --encrypted-identity-key ~/.valops/age/identity-backup-{peer-id}.age --network testnet --user testnet-validator
-```
-
-## Validator Lifecycle Management
-
-### Starting the Validator
-
-**Standard Startup:**
-```bash
-# Start validator (updates configuration and starts process)
-./validator-up --user testnet-validator
-```
-
-**What this does:**
-- Updates validator scripts to latest versions
-- Refreshes log rotation and firewall configuration
-- Starts the validator process in the background
-
-**Startup Verification:**
-```bash
-# Check process status
-source lib.sh
-is_validator_running "testnet-validator" && echo "Running" || echo "Stopped"
-
-# Get process details
-PID=$(get_validator_pid "testnet-validator")
-echo "Validator PID: $PID"
-
-# Check RPC endpoint
-curl -X POST -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"get_block_count","params":[],"id":1}' \
-  http://127.0.0.1:9002/
-```
-
-### Stopping the Validator
-
-**Graceful Shutdown:**
-```bash
-# Recommended method (uses halt-validator script with timeouts and fallbacks)
-./validator-down --user testnet-validator
-```
-
-**Manual Shutdown (if needed):**
-```bash
-# Direct halt-validator call
-sudo su - testnet-validator -c "./halt-validator"
-
-# Manual process termination
-sudo su - testnet-validator -c "pkill -TERM -f '^validator --network-mode'"
-```
-
-**Shutdown Verification:**
-```bash
-# Verify all processes stopped
-source lib.sh
-is_validator_running "testnet-validator" || echo "All stopped"
-
-# Check RPC endpoint is down
-curl -X POST -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"get_block_count","params":[],"id":1}' \
-  http://127.0.0.1:9002/ || echo "RPC not responding"
-```
-
-### Restart Procedures
-
-**Standard Restart:**
-```bash
-# Stop and start
-./validator-down --user testnet-validator
-./validator-up --user testnet-validator
-```
-
-**Quick Status Check:**
-```bash
-# Check if restart is needed
-source lib.sh
-if is_validator_running "testnet-validator"; then
-    echo "Validator is running"
-else
-    echo "Validator needs to be started"
-    ./validator-up --user testnet-validator
-fi
-```
-
-## Configuration Management
-
-### Environment Variables
-
-The validator runtime is configured through environment variables with sensible defaults:
-
-```bash
-# View current configuration
-sudo -u testnet-validator cat << 'EOF'
-# Default validator configuration
-ARCH_DATA_DIR=${ARCH_DATA_DIR:-$HOME/data/.arch_data}
-ARCH_RPC_BIND_IP=${ARCH_RPC_BIND_IP:-127.0.0.1}
-ARCH_RPC_BIND_PORT=${ARCH_RPC_BIND_PORT:-9002}
-ARCH_TITAN_ENDPOINT=${ARCH_TITAN_ENDPOINT:-https://titan-public-http.test.arch.network}
-ARCH_TITAN_SOCKET_ENDPOINT=${ARCH_TITAN_SOCKET_ENDPOINT:-titan-public-tcp.test.arch.network:3030}
-ARCH_NETWORK_MODE=${ARCH_NETWORK_MODE:-testnet}
-EOF
-```
-
-### Custom Configuration
-
-Create environment-specific configuration:
-
-```bash
-# Create custom environment file
-sudo -u testnet-validator cat << 'EOF' > /home/testnet-validator/.validator-env
-# Custom validator configuration
-export ARCH_RPC_BIND_PORT=9003
-export ARCH_TITAN_ENDPOINT=https://custom-endpoint.example.com
-EOF
-
-# Modify run-validator to source custom config
-sudo -u testnet-validator sed -i '1a source ~/.validator-env 2>/dev/null || true' \
-  /home/testnet-validator/run-validator
-```
-
-### Network Configuration
-
-**Testnet (Default):**
-```bash
-export ARCH_NETWORK_MODE=testnet
-export ARCH_TITAN_ENDPOINT=https://titan-public-http.test.arch.network
-export ARCH_TITAN_SOCKET_ENDPOINT=titan-public-tcp.test.arch.network:3030
-```
-
-**Mainnet (When Available):**
-```bash
-export ARCH_NETWORK_MODE=mainnet
-export ARCH_TITAN_ENDPOINT=https://titan-public-http.arch.network
-export ARCH_TITAN_SOCKET_ENDPOINT=titan-public-tcp.arch.network:3030
-```
-
-## Log Management
-
-### Log Locations
-
-```bash
-# Primary validator log
-/home/testnet-validator/logs/validator.log
-
-# Rotated logs (7-day retention)
-/home/testnet-validator/logs/validator.log.1
-/home/testnet-validator/logs/validator.log.2.gz
-# ... up to validator.log.7.gz
-```
-
-### Log Analysis
-
-**Real-time Monitoring:**
-```bash
-# Follow live logs
-sudo -u testnet-validator tail -f /home/testnet-validator/logs/validator.log
-
-# Follow with filtering
-sudo -u testnet-validator tail -f /home/testnet-validator/logs/validator.log | grep -E "(ERROR|WARN|slot)"
-```
-
-**Historical Analysis:**
-```bash
-# Search for errors
-grep ERROR /home/testnet-validator/logs/validator.log* | tail -20
-
-# Network connectivity events
-grep -i titan /home/testnet-validator/logs/validator.log* | tail -10
-
-# Startup/shutdown events
-grep -E "validator-up:|validator-down:" /home/testnet-validator/logs/validator.log* | tail -10
-
-# Slot processing activity
-grep "slot [0-9]*" /home/testnet-validator/logs/validator.log | tail -20
-```
-
-**Log Rotation Management:**
-```bash
-# Check rotation configuration
-cat /etc/logrotate.d/validator-testnet-validator
-
-# Test rotation (dry run)
-sudo logrotate -d /etc/logrotate.d/validator-testnet-validator
-
-# Force rotation
-sudo logrotate -f /etc/logrotate.d/validator-testnet-validator
-
-# Check rotation status
-ls -la /home/testnet-validator/logs/
-```
-
-### Log Troubleshooting
-
-**Log Growth Issues:**
-```bash
-# Monitor log size
-watch -n 5 "du -sh /home/testnet-validator/logs/"
-
-# Check for excessive logging
-tail -100 /home/testnet-validator/logs/validator.log | cut -d' ' -f3- | sort | uniq -c | sort -nr
-
-# Temporarily reduce log verbosity (if supported)
-# This depends on validator binary capabilities
-```
-
-**Missing Logs:**
-```bash
-# Check log directory permissions
-ls -la /home/testnet-validator/logs/
-
-# Verify logrotate configuration
-sudo logrotate -d /etc/logrotate.d/validator-testnet-validator
-
-# Check if validator is writing to logs
-sudo -u testnet-validator lsof +D /home/testnet-validator/logs/
-```
-
-## Data Management
-
-### Data Directory Structure
-
-```bash
-# View data directory layout
-sudo -u testnet-validator find /home/testnet-validator/data/ -type d | head -20
-
-# Check data sizes
-sudo -u testnet-validator du -sh /home/testnet-validator/data/.arch_data/testnet/*
-```
-
-### Backup Procedures
-
-**Configuration Backup:**
-```bash
-# Backup validator configuration and logs
-sudo tar -czf validator-backup-$(date +%Y%m%d).tar.gz \
-  -C /home/testnet-validator \
-  logs/ \
-  run-validator \
-  halt-validator \
-  .validator-env 2>/dev/null || true
-```
-
-**Data Backup (Caution - Large Files):**
-```bash
-# Backup critical data (can be very large)
-sudo -u testnet-validator tar -czf validator-data-$(date +%Y%m%d).tar.gz \
-  -C /home/testnet-validator/data \
-  .arch_data/testnet/
-```
-
-### Data Cleanup
-
-**Log Cleanup:**
-```bash
-# Clean old rotated logs manually
-sudo -u testnet-validator find /home/testnet-validator/logs/ -name "*.gz" -mtime +7 -delete
-
-# Clean large log files (emergency)
-sudo -u testnet-validator truncate -s 0 /home/testnet-validator/logs/validator.log
-```
-
-**Data Directory Cleanup:**
-```bash
-# Check for temporary files
-sudo -u testnet-validator find /home/testnet-validator/data/ -name "*.tmp" -o -name "*.lock"
-
-# Clean temporary files (be cautious)
-sudo -u testnet-validator find /home/testnet-validator/data/ -name "*.tmp" -mtime +1 -delete
-```
-
-## Performance Optimization
-
-### System Resources
-
-**Monitor Resource Usage:**
-```bash
-# CPU and memory usage
-htop -u testnet-validator
-
-# Disk I/O
-sudo iotop -u testnet-validator
-
-# Network usage
-sudo nethogs -u testnet-validator
-```
-
-**Optimize System Settings:**
-```bash
-# Increase file descriptor limits
-echo "testnet-validator soft nofile 65536" | sudo tee -a /etc/security/limits.conf
-echo "testnet-validator hard nofile 65536" | sudo tee -a /etc/security/limits.conf
-
-# Optimize network settings (if needed)
-echo "net.core.rmem_max = 134217728" | sudo tee -a /etc/sysctl.conf
-echo "net.core.wmem_max = 134217728" | sudo tee -a /etc/sysctl.conf
-sudo sysctl -p
-```
-
-### Validator Performance
-
-**Monitor Validator Metrics:**
-```bash
-source lib.sh
-
-# Check processing performance
-echo "Block height: $(get_block_height)"
-echo "Recent slot: $(get_recent_slot "testnet-validator")"
-echo "Error rate: $(get_recent_error_count "testnet-validator") per hour"
-```
-
-**Performance Tuning:**
-```bash
-# Adjust RPC settings for better performance
-export ARCH_RPC_BIND_IP=0.0.0.0  # Allow external connections (security consideration)
-export ARCH_RPC_BIND_PORT=9002   # Standard port
-
-# Optimize data directory location (use fast SSD)
-export ARCH_DATA_DIR=/fast-ssd/validator-data/.arch_data
-```
-
-## Security Operations
-
-### Access Control
-
-**User Permissions:**
-```bash
-# Verify validator user permissions
-id testnet-validator
-sudo -u testnet-validator whoami
-
-# Check home directory permissions
-ls -la /home/testnet-validator/
-
-# Verify sudo restrictions
-sudo -l -U testnet-validator
-```
-
-**Network Security:**
-```bash
-# Check open ports
-sudo ss -tlnp | grep -E "(9002|3030)"
-
-# Verify firewall settings
-sudo ufw status
-sudo iptables -L | grep -E "(9002|3030)"
-```
-
-### Key Management
-
-**Important:** Validator signing keys are managed separately from this infrastructure. The valops toolkit never handles cryptocurrency keys.
-
-```bash
-# Verify identity files are properly secured
-sudo -u testnet-validator find /home/testnet-validator/ -name "identity-secret" -exec ls -la {} \;
-
-# Check for any unexpected credential files
-sudo -u testnet-validator find /home/testnet-validator/ -name "*secret*" -o -name "*private*"
-```
-
-### Security Monitoring
-
-**Process Monitoring:**
-```bash
-# Monitor validator process integrity
-ps aux | grep testnet-validator
-
-# Check for unexpected processes
-sudo -u testnet-validator ps -u testnet-validator
-```
-
-**Network Monitoring:**
-```bash
-# Monitor network connections
-sudo ss -tulnp | grep testnet-validator
-
-# Check for unexpected connections
-sudo netstat -tulnp | grep -E "(9002|3030)"
-```
-
-## Maintenance Procedures
-
-### Daily Maintenance
-
-**Health Check (2 minutes):**
-```bash
-# Quick status check
-source lib.sh
-./validator-dashboard-helpers/status-check
-
-# Verify key metrics
-echo "Process: $(is_validator_running "testnet-validator" && echo "✓" || echo "✗")"
-echo "RPC: $(is_rpc_listening && echo "✓" || echo "✗")"
-echo "Block: $(get_block_height)"
-```
-
-**Log Review (3 minutes):**
-```bash
-# Check for recent errors
-grep ERROR /home/testnet-validator/logs/validator.log | tail -5
-
-# Verify normal activity
-tail -10 /home/testnet-validator/logs/validator.log
-```
-
-### Weekly Maintenance
-
-**System Updates:**
-```bash
-# Update system packages
+# System updates
 sudo apt update && sudo apt upgrade -y
 
-# Update validator binaries (if needed)
-# 1. Build new binaries in dev-env VM
-# 2. Sync to bare metal
-SYNC_STRATEGY_ARCH=vm sync-arch-bins       # Arch binaries from dev VM
-SYNC_STRATEGY_BITCOIN=vm sync-bitcoin-bins # Bitcoin binaries from dev VM
-sync-titan-bins                            # Titan binary from dev VM
-
-# 3. Restart validator if binaries changed
-./validator-down --user testnet-validator
-./validator-up --user testnet-validator
-```
-
-**Performance Review:**
-```bash
-# Check data growth
-du -sh /home/testnet-validator/data/.arch_data/testnet/ledger
-
-# Review error trends
-grep ERROR /home/testnet-validator/logs/validator.log* | wc -l
-
-# Check restart frequency
-source lib.sh
-echo "Restarts: $(get_restart_count "testnet-validator")"
-```
-
-### Monthly Maintenance
-
-**Deep Health Check:**
-```bash
-# Comprehensive system check
-df -h  # Disk space
-free -h  # Memory usage
-uptime  # System load
-
-# Validator-specific checks
-source lib.sh
-echo "Restarts: $(get_restart_count "testnet-validator")"
-echo "Total errors: $(get_error_count "testnet-validator")"
-echo "Data size: $(get_data_sizes "testnet-validator")"
-```
-
-**Configuration Review:**
-```bash
-# Review validator configuration
-sudo -u testnet-validator env | grep ARCH_
-
-# Check log rotation
+# Log cleanup (automatic via logrotate)
 ls -la /home/testnet-validator/logs/
 
-# Verify backups (if implemented)
-ls -la validator-backup-*.tar.gz
+# Disk usage check
+df -h
+du -sh /home/testnet-validator/data/
 ```
 
-## Disaster Recovery
-
-### Backup Procedures
-
-**Create Recovery Package:**
+### Monthly
 ```bash
-#!/bin/bash
-# Create complete recovery package
-DATE=$(date +%Y%m%d-%H%M%S)
-BACKUP_DIR="validator-recovery-$DATE"
+# Review validator performance
+grep "block height" /home/testnet-validator/logs/validator.log | tail -20
 
-mkdir -p "$BACKUP_DIR"
+# Check for restarts
+grep "validator-up" /home/testnet-validator/logs/validator.log | wc -l
 
-# Copy configuration and scripts
-cp -r resources/ "$BACKUP_DIR/"
-cp lib.sh setup-age-keys validator-init validator-up validator-down sync-arch-bins sync-bitcoin-bins sync-titan-bins sync-lib.sh validator-dashboard "$BACKUP_DIR/"
-
-# Copy validator-specific configuration
-sudo cp -r /home/testnet-validator/{run-validator,halt-validator} "$BACKUP_DIR/" 2>/dev/null || true
-sudo cp /etc/logrotate.d/validator-testnet-validator "$BACKUP_DIR/" 2>/dev/null || true
-
-# Create recovery documentation
-cat << 'EOF' > "$BACKUP_DIR/RECOVERY.md"
-# Validator Recovery Procedure
-
-1. Setup age keys: ./setup-age-keys
-2. Initialize validator: ./validator-init --encrypted-identity-key validator-identity.age --network testnet --user testnet-validator
-3. Start validator: ./validator-up --user testnet-validator
-4. Monitor: VALIDATOR_USER=testnet-validator ./validator-dashboard
-EOF
-
-tar -czf "$BACKUP_DIR.tar.gz" "$BACKUP_DIR"
-rm -rf "$BACKUP_DIR"
-echo "Recovery package created: $BACKUP_DIR.tar.gz"
+# Binary updates (as needed)
+# Check for new releases and update per Binary Management section
 ```
 
-### Recovery Procedures
-
-**Complete System Recovery:**
-```bash
-# 1. Extract recovery package
-tar -xzf validator-recovery-*.tar.gz
-cd validator-recovery-*/
-
-# 2. Setup age keys (if not already done)
-./setup-age-keys
-
-# 3. Initialize validator
-./validator-init --encrypted-identity-key validator-identity.age --network testnet --user testnet-validator
-
-# 4. Start validator
-./validator-up --user testnet-validator
-
-# 5. Verify operation
-./validator-dashboard-helpers/status-check
-```
-
-**Partial Recovery (Configuration Only):**
-```bash
-# Restart validator to refresh configuration
-./validator-down --user testnet-validator
-./validator-up --user testnet-validator
-```
-
-## Troubleshooting Common Issues
+## Troubleshooting
 
 ### Validator Won't Start
+**Symptoms**: `validator-up` fails or process exits immediately
 
-**Symptoms:** `validator-up` fails or process starts but immediately exits
+**Diagnosis**:
 ```bash
-# Check initialization status
+# Check recent logs
+tail -50 /home/testnet-validator/logs/validator.log
+
+# Verify binary
+which validator && validator --version
+
+# Check user/permissions
 sudo -u testnet-validator ls -la /home/testnet-validator/
-
-# Check recent startup logs
-grep "validator-up:" /home/testnet-validator/logs/validator.log | tail -5
-
-# Verify binary integrity
-which validator
-validator --version 2>/dev/null || echo "Binary issue"
 ```
 
-**Solutions:**
-1. Verify initialization: `./validator-init --encrypted-identity-key validator-identity.age --network testnet --user testnet-validator`
-2. Check binary installation:
-   ```bash
-   # For development binaries
-   SYNC_STRATEGY_ARCH=vm sync-arch-bins
-   SYNC_STRATEGY_BITCOIN=vm sync-bitcoin-bins
-   sync-titan-bins
-
-   # For release binaries
-   ARCH_VERSION=v0.5.3 sync-arch-bins
-   BITCOIN_VERSION=29.0 sync-bitcoin-bins
-   ```
-3. Review configuration: Check environment variables
-4. Check disk space: `df -h`
+**Solutions**:
+1. **Re-initialize**: `VALIDATOR_ENCRYPTED_IDENTITY_KEY=backup.age validator-init`
+2. **Update binaries**: See Binary Management section
+3. **Check disk space**: `df -h`
+4. **Review config**: Environment variables in `validators/testnet/.envrc`
 
 ### High Resource Usage
+**Symptoms**: High CPU/memory/disk usage
 
-**Symptoms:** High CPU, memory, or disk usage
+**Diagnosis**:
 ```bash
-# Monitor resource usage
-source lib.sh
+# Check processes
 htop -u testnet-validator
 
-# Check validator metrics
-echo "Process count: $(get_validator_pid_count "testnet-validator")"
-echo "Data size: $(get_data_sizes "testnet-validator")"
+# Check disk usage
+du -sh /home/testnet-validator/data/*
+
+# Check for multiple processes
+ps aux | grep validator | wc -l
 ```
 
-**Solutions:**
-1. Check for multiple processes: Only one validator should be running
-2. Review log growth: Large logs can consume significant resources
-3. Monitor data directory growth: Consider cleanup procedures
-4. Optimize system settings: Adjust file descriptors and network settings
+**Solutions**:
+1. **Multiple processes**: Kill extras, ensure only one running
+2. **Disk space**: Monitor data directory growth, consider cleanup
+3. **Memory leaks**: Restart validator: `validator-down && validator-up`
 
 ### Network Connectivity Issues
+**Symptoms**: RPC not responding, Titan connection errors
 
-**Symptoms:** RPC not responding, network connection errors
+**Diagnosis**:
 ```bash
-# Check network status
-source lib.sh
-is_rpc_listening && echo "RPC OK" || echo "RPC DOWN"
-echo "Titan status: $(get_titan_connection_status "testnet-validator")"
+# Check port binding
+sudo ss -tlnp | grep 9002
+
+# Test endpoints
+curl -s https://titan-public-http.test.arch.network | head -5
+nc -zv titan-public-tcp.test.arch.network 3030
 
 # Check firewall
 sudo ufw status
 ```
 
-**Solutions:**
-1. Verify firewall configuration: `./validator-up` refreshes firewall rules
-2. Check network endpoints: Verify titan endpoints are reachable
-3. Review RPC binding: Ensure correct IP and port configuration
-4. Restart validator: `./validator-down --user testnet-validator && ./validator-up --user testnet-validator`
+**Solutions**:
+1. **Firewall**: `validator-up` refreshes firewall rules
+2. **Port conflicts**: Check if port 9002 is used by other services
+3. **Network**: Verify internet connectivity and DNS resolution
+4. **Restart**: `validator-down && validator-up`
 
-### Identity/Authentication Issues
+### Identity/Backup Issues
+**Symptoms**: Identity deployment failures, backup errors
 
-**Symptoms:** Identity deployment failures, peer ID mismatches
+**Diagnosis**:
 ```bash
 # Check identity files
-sudo -u testnet-validator find /home/testnet-validator/data/.arch_data/ -name "identity-secret"
+sudo -u testnet-validator find /home/testnet-validator/data/ -name "*identity*"
+
+# Check backups
+ls -la ~/.valops/age/identity-backup-*
 
 # Verify age keys
 ls -la ~/.valops/age/
 ```
 
-**Solutions:**
-1. Verify age keys: `./setup-age-keys`
-2. Re-initialize if needed: `./validator-down --clobber --user testnet-validator` then re-init
-3. Check encrypted identity file integrity
-4. Verify correct public key was used for encryption
+**Solutions**:
+1. **Restore from backup**: `VALIDATOR_ENCRYPTED_IDENTITY_KEY=~/.valops/age/identity-backup-{peer-id}.age validator-init`
+2. **Re-generate identity**: See [IDENTITY-GENERATION.md](IDENTITY-GENERATION.md)
+3. **Age key issues**: `setup-age-keys` to recreate
 
-## Interactive Operations
+## Emergency Procedures
 
-### Using lib.sh Functions
-
+### Complete Validator Removal
 ```bash
-# Source the library for interactive use
-source lib.sh
+# WARNING: Creates automatic backup before destruction
+validator-down --clobber
 
-# Check validator status
-is_validator_running "testnet-validator" && echo "Running" || echo "Stopped"
-
-# Get process information
-get_validator_pid "testnet-validator"
-get_validator_uptime "testnet-validator" "$(get_validator_pid "testnet-validator")"
-
-# Stop validator manually
-stop_validator "testnet-validator"
-
-# Security operations
-shred_validator_identities "testnet-validator"  # Secure cleanup
+# This will:
+# 1. Backup all identities to ~/.valops/age/
+# 2. Stop validator process
+# 3. Remove user and all data
+# 4. Show 3-second abort window
 ```
 
-### Advanced Operations
-
+### Disaster Recovery
 ```bash
-# Multiple validator management
-for user in testnet-validator mainnet-validator; do
-    if is_validator_running "$user"; then
-        echo "$user: Running (PID: $(get_validator_pid "$user"))"
-    else
-        echo "$user: Stopped"
-    fi
-done
+# Restore from backup
+VALIDATOR_ENCRYPTED_IDENTITY_KEY=~/.valops/age/identity-backup-{peer-id}.age validator-init
 
-# Bulk operations
-source lib.sh
-./validator-down --user testnet-validator
-./validator-up --user testnet-validator
+# Restart operations
+validator-up && validator-dashboard
 ```
 
-This comprehensive operations guide provides everything needed for day-to-day validator management using the new architecture while maintaining the same level of operational excellence.
+### Emergency Contacts
+- **Logs**: `/home/testnet-validator/logs/validator.log`
+- **Configs**: `validators/testnet/.envrc`
+- **Backups**: `~/.valops/age/identity-backup-*`
+- **Full troubleshooting**: See legacy docs in `docs/legacy/` for detailed debugging
+
+---
+
+**Quick actions** → This guide | **Initial setup** → [QUICK-START.md](QUICK-START.md) | **Security review** → [SECURITY.md](SECURITY.md) | **Advanced monitoring** → [OBSERVABILITY.md](OBSERVABILITY.md)

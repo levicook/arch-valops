@@ -1,412 +1,237 @@
 # Security Guide
 
-This guide explains the security model, key isolation strategies, and threat analysis for the valops toolkit.
+🔒 **For**: Security teams and production decision-makers
+🎯 **Focus**: Security model, threat analysis, production recommendations
 
-## Security Model: Key Material Isolation
+## Security Architecture Overview
 
-A critical security feature of this architecture is **complete isolation of sensitive key materials** from development and build environments:
+**Defense in Depth**: Multiple isolation layers protect validator funds and operations.
 
+### Key Principle: Separation of Concerns
 ```
-Developer Laptop    Bare Metal Server    Multipass VM
-     │                     │                 │
- 🔐 SSH Keys          🚫 No Keys        🚫 No Keys
- 🔐 GitHub Token      🚫 No Tokens      🚫 No Tokens
- 🔐 GPG Keys          🚫 No GPG         🚫 No GPG
-     │                     │                 │
-     └─── Agent Forward ───┴─── Tunnel ─────┘
+Development Keys    →  SSH, GPG, GitHub access (laptop-only)
+Infrastructure Keys →  Server access, age encryption
+Validator Keys      →  Signing keys, never touched by tooling
 ```
 
-### Key Isolation Benefits
+**Security Guarantee**: Complete compromise of development/operations infrastructure cannot access validator signing keys or funds.
 
-- **Zero key exposure**: Private keys never leave the developer's laptop
-- **Compromise resistance**: If VM or server is compromised, no keys are exposed
-- **Development safety**: Build environments can't access or exfiltrate credentials
-- **Audit clarity**: All authenticated operations trace back to developer's laptop
-- **Rotation simplicity**: Key rotation only affects developer's local environment
+## Threat Model
 
-### What Stays on the Laptop
+### What This System Protects Against
 
-- SSH private keys (GitHub, server access)
-- GPG signing keys
-- GitHub personal access tokens
-- Any other authentication credentials
+✅ **Development Infrastructure Compromise**
+- Attacker gains access to development VM, laptops, CI/CD
+- **Impact**: Cannot access validator signing keys (encrypted separately)
+- **Mitigation**: Age encryption, offline identity generation
 
-### What's Forwarded Securely
+✅ **Operations Server Compromise**
+- Attacker gains root access to validator server
+- **Impact**: Cannot decrypt identity keys (require separate age keys)
+- **Mitigation**: Encrypted identity files, key separation
 
-- SSH authentication capability (via agent)
-- Git operations (via forwarded SSH)
-- GitHub API access (via forwarded credentials)
+✅ **Credential Theft**
+- SSH keys, GitHub tokens, development credentials stolen
+- **Impact**: Cannot access validator operations (separate key hierarchy)
+- **Mitigation**: SSH agent forwarding, no stored production credentials
 
-### What Never Gets Copied
+✅ **Supply Chain Attacks**
+- Compromised dependencies, malicious binaries
+- **Impact**: Limited by binary verification and VM isolation
+- **Mitigation**: Official release downloads, VM build isolation
 
-- Private key material
-- Token strings
-- Credential files
-- Authentication secrets
+### What This System Does NOT Protect Against
 
-This model ensures that even if the development VM or bare metal server is fully compromised, attackers cannot access your GitHub account, sign commits on your behalf, or impersonate your development identity.
+❌ **Physical Access to Validator Server**
+- Mitigation: Use secure hosting, encrypted disks, physical security
 
-## Security Benefits for Validator Operations
+❌ **Compromise of Age Private Keys**
+- Mitigation: Secure age key storage, consider hardware security modules
 
-This architecture provides enhanced security for cryptocurrency validator infrastructure:
+❌ **Social Engineering for Direct Key Access**
+- Mitigation: Operational security training, access controls
 
-### Development Security
+❌ **Vulnerabilities in Validator Binary Itself**
+- Mitigation: Keep binaries updated, monitor security advisories
 
-- **Code integrity**: All commits are signed with developer's GPG key (never exposed)
-- **Supply chain protection**: Build environments can't inject malicious code into repositories
-- **Identity verification**: All GitHub operations maintain proper attribution
-- **Credential scope**: Access limited to what's needed for specific operations
+## Production Security Recommendations
 
-### Operational Security
+### Essential: Identity Generation Security
 
-- **Build isolation**: Compromised build environment can't affect validator keys or funds
-- **Limited blast radius**: Server compromise doesn't expose development credentials
-- **Audit trail**: All authenticated operations traceable to specific developer
-- **Key rotation**: Developer key rotation doesn't require server access
-
-### Validator-Specific Protections
-
-- **Separation of concerns**: Validator private keys completely separate from development keys
-- **Environment isolation**: Build tools never interact with validator key material
-- **Development safety**: Developers can work on validator code without access to funds
-- **Deployment control**: Only binaries (not credentials) flow from development to production
-
-## Critical: Validator Signing Key Isolation
-
-The most important security aspect is that **validator signing keys** (the actual cryptocurrency keys that control funds and staking operations) are **completely isolated** from this entire development and deployment infrastructure:
-
-```
-🔐 Validator Signing Keys (Hardware/Secure Storage)
-    │
-    ❌ NEVER exposed to:
-    │
-    ├── Developer laptops
-    ├── Development VMs
-    ├── Bare metal servers
-    ├── Build processes
-    ├── Deployment scripts
-    └── Any part of valops toolkit
-```
-
-### Key Isolation Layers
-
-1. **Development keys**: SSH, GPG, GitHub tokens (isolated to laptop via agent forwarding)
-2. **Infrastructure keys**: Server access, VM management (minimal scope)
-3. **Validator signing keys**: Cryptocurrency operations (completely separate, hardware-secured)
-
-### Financial Security Guarantee
-
-- Even **total compromise** of the entire valops infrastructure cannot access validator funds
-- **Hardware security modules** or **air-gapped systems** hold actual validator keys
-- **Development workflow** operates with zero knowledge of financial key material
-- **Binary deployment** is completely separate from key management operations
-
-## Threat Model Coverage
-
-### Covered Threats
-
-- ✅ **Compromised development VM**: No credential exposure
-- ✅ **Compromised bare metal server**: No GitHub/development access
-- ✅ **Supply chain attacks**: Limited to build environment only
-- ✅ **Insider threats**: Developers can't access validator private keys
-- ✅ **Key exposure**: Development keys isolated from validator operations
-- ✅ **Complete infrastructure compromise**: Validator signing keys remain secure
-- ✅ **Fund theft attempts**: No access path to cryptocurrency keys
-- ✅ **Malicious binary injection**: Cannot access existing validator keys
-- ✅ **Social engineering**: Development access cannot compromise funds
-
-### Risk Mitigation Strategies
-
-**For Compromised Development VM:**
-- No keys stored locally
-- Build environment isolation
-- Limited network access
-- Automated security updates
-
-**For Compromised Bare Metal Server:**
-- No development credentials stored
-- Minimal attack surface
-- Process isolation via dedicated users
-- Network segmentation
-
-**For Supply Chain Attacks:**
-- Reproducible builds
-- Binary verification
-- Source code integrity checks
-- Dependency scanning
-
-**For Insider Threats:**
-- Principle of least privilege
-- Audit logging
-- Multi-person approval for critical changes
-- Role-based access control
-
-## Host Security Assessment
-
-The `check-env` script provides comprehensive security assessment of the host environment before validator deployment:
+**Critical**: Generate validator identities on secure, offline machines.
 
 ```bash
-# Run security assessment (recommended first step)
-./check-env
+# On secure/offline machine:
+# 1. Download validator binary securely
+# 2. Generate identity
+validator --generate-peer-id --data-dir $(mktemp -d) | grep secret_key | cut -d'"' -f4 | age -r "$HOST_PUBLIC_KEY" -o validator-identity.age
+# 3. Transfer encrypted file via secure channel
+# 4. Securely wipe temporary data
 ```
 
-### Assessment Categories
+**Requirements**:
+- Air-gapped or offline machine for generation
+- Verified validator binary (checksum/signature verification)
+- Secure transfer of encrypted identity file
+- Proper disposal of temporary identity data
 
-The security assessment evaluates eight critical areas:
+### Essential: Age Key Management
 
-1. **🔐 SSH Security** - Service status, root login, password authentication, port configuration, authentication attempts
-2. **🛡️ Firewall Security** - UFW status, rule configuration, port exposure, principle of least privilege
-3. **🚫 Intrusion Prevention** - fail2ban status, jail configuration, active protection
-4. **📦 System Updates** - Automatic updates, pending security patches, system currency
-5. **👤 User Security** - Sudo privileges, empty passwords, validator user isolation
-6. **🌐 Network Security** - Listening services, insecure protocols, IPv6 configuration
-7. **🔧 System Hardening** - Kernel protections, AppArmor, SUID settings, swap encryption
-8. **📁 File System Security** - Directory permissions, sensitive file access
+**Age private keys are the master secret** - protect them like root CA keys.
 
-### Effective Configuration Checking
+**Recommended Storage**:
+- Hardware Security Modules (HSM) for production
+- Encrypted USB drives in secure physical locations
+- Key escrow with multiple trustees for disaster recovery
 
-The assessment tool checks **running/effective configuration** rather than just configuration files:
+**Access Control**:
+- Separate age keys per validator environment (testnet/mainnet)
+- Audit logs for age key usage
+- Regular key rotation procedures
 
-- Uses `sshd -T` for actual SSH daemon settings
-- Verifies active firewall rules with `ufw status`
-- Checks running services with `systemctl is-active`
-- Validates effective kernel parameters
+### Essential: Network Security
 
-This approach ensures the assessment reflects actual security posture, not just intended configuration.
-
-### Security Recommendations
-
-The tool provides actionable recommendations for identified issues:
-
-- **Color-coded output**: ✅ Good (green), ⚠️ Warning (yellow), ❌ Bad (red), ℹ️ Info (blue)
-- **Specific commands**: Exact commands to remediate identified issues
-- **Validator-specific guidance**: Recommendations tailored for validator operations
-- **Risk prioritization**: Critical issues highlighted for immediate attention
-
-### Integration with Validator Workflow
-
-Security assessment should be the first step in validator deployment:
-
+**Validator Network Exposure**:
 ```bash
-# 1. Assess host security
-./check-env
+# Ports that should be exposed:
+# 29001 - Gossip network (required for P2P)
+# 9002  - RPC (localhost only, SSH tunnel for access)
 
-# 2. Address any critical issues identified
-# (follow tool recommendations)
-
-# 3. Proceed with validator deployment
-./setup-age-keys
-./validator-init --encrypted-identity-key validator-identity.age --network testnet --user testnet-validator
+# Firewall configuration (automatic via validator-up):
+sudo ufw allow 29001    # Gossip
+sudo ufw allow ssh      # Management access
+# RPC port NOT exposed externally
 ```
 
-Regular security assessments help maintain security posture over time and catch configuration drift.
+**Access Patterns**:
+- SSH access with key-based authentication only
+- RPC access via SSH tunneling (never direct)
+- Monitoring systems should use read-only endpoints
 
-## Layered Security Architecture
+### Recommended: Binary Verification
 
-This layered security approach ensures that validator operations remain secure even if development or deployment infrastructure is compromised.
-
-### Layer 1: Network Security
-
+**For Production**: Use official releases with verification:
 ```bash
-# Firewall configuration
-sudo ufw enable
-sudo ufw default deny incoming
-sudo ufw default allow outgoing
-sudo ufw allow ssh
-sudo ufw allow 9002/tcp  # RPC port (if needed externally)
+# Use specific versions, not 'latest'
+ARCH_VERSION=v0.5.3 sync-arch-bins
+BITCOIN_VERSION=29.0 sync-bitcoin-bins
 
-# Network monitoring
-sudo ss -tlnp | grep -E "(22|9002)"
-sudo netstat -tulnp | grep LISTEN
+# TODO: Add signature verification
+# (Feature request: GPG signature verification for releases)
 ```
 
-### Layer 2: System Security
-
+**For Development**: VM strategy provides additional isolation:
 ```bash
-# User isolation
-id testnet-validator
-sudo -l -U testnet-validator
-
-# Process isolation
-ps aux | grep testnet-validator
-sudo -u testnet-validator ps -u testnet-validator
-
-# File permissions
-ls -la /home/testnet-validator/
-sudo find /home/testnet-validator/ -type f -perm /o+w
+# Development builds are isolated to VM environment
+SYNC_STRATEGY_ARCH=vm sync-arch-bins
 ```
 
-### Layer 3: Application Security
+### Recommended: Monitoring Security
 
-```bash
-# Binary integrity
-which validator
-md5sum /usr/local/bin/validator
+**Log Security**:
+- Validator logs contain operational data, not secrets
+- Safe to aggregate to central logging systems
+- Monitor for unusual patterns, errors, restart frequency
 
-# Configuration security
-sudo -u testnet-validator cat /home/testnet-validator/run-validator
-grep -E "(ARCH_|export)" /home/testnet-validator/run-validator
-```
+**Metrics Exposure**:
+- RPC endpoint metrics safe for monitoring systems
+- Process and system metrics safe for collection
+- No sensitive data exposed in monitoring interfaces
 
-### Layer 4: Operational Security
+## Security Verification Checklist
 
-```bash
-# Log monitoring
-grep -i error /home/testnet-validator/logs/validator.log | tail -10
-grep -i "auth\|fail\|denied" /var/log/auth.log | tail -10
+### Before Production Deployment
 
-# Access monitoring
-last -n 20
-sudo journalctl -u ssh | tail -20
-```
+- [ ] **Identity Generation**: Created on secure/offline machine
+- [ ] **Age Keys**: Stored securely, access controlled
+- [ ] **Network**: Firewall configured, RPC not exposed
+- [ ] **SSH**: Key-based authentication, no password auth
+- [ ] **Updates**: System updates automated, binary updates planned
+- [ ] **Monitoring**: Centralized logging, alerting configured
+- [ ] **Backups**: Identity backups verified, recovery tested
+- [ ] **Documentation**: Operations team trained on procedures
 
-## Security Monitoring
+### Ongoing Security Maintenance
 
-### Key Security Indicators
+**Weekly**:
+- Review SSH access logs
+- Verify firewall configuration unchanged
+- Check for security updates
 
-**Process Monitoring:**
-```bash
-# Monitor validator process integrity
-ps aux | grep testnet-validator
+**Monthly**:
+- Test backup/recovery procedures
+- Review age key access patterns
+- Audit validator configuration changes
 
-# Check for unexpected processes
-sudo -u testnet-validator ps -u testnet-validator
+**Quarterly**:
+- Rotate SSH keys
+- Review and test disaster recovery procedures
+- Security assessment of hosting environment
 
-# Monitor process resource usage
-top -u testnet-validator
-```
-
-**Network Monitoring:**
-```bash
-# Monitor network connections
-sudo ss -tulnp | grep testnet-validator
-
-# Check for unexpected connections
-sudo netstat -tulnp | grep -E "(9002|3030)"
-
-# Monitor network traffic
-sudo nethogs -u testnet-validator
-```
-
-**File System Monitoring:**
-```bash
-# Monitor file integrity
-sudo find /home/testnet-validator/ -type f -newer /tmp/last_check
-
-# Check for suspicious files
-sudo find /home/testnet-validator/ -name ".*" -type f
-sudo find /home/testnet-validator/ -perm /o+w -type f
-```
-
-### Security Verification
-
-**Important:** Validator signing keys are managed separately from this infrastructure. The valops toolkit never handles cryptocurrency keys.
-
-```bash
-# Verify identity files are properly secured
-sudo -u testnet-validator find /home/testnet-validator/ -name "identity-secret" -exec ls -la {} \;
-
-# Check for any unexpected credential files
-sudo -u testnet-validator find /home/testnet-validator/ -name "*secret*" -o -name "*private*"
-
-# Verify SSH agent forwarding (from development machine)
-ssh-add -l  # Should show keys on laptop
-ssh bare-metal-server "ssh-add -l"  # Should show same keys via forwarding
-ssh dev-env "ssh-add -l"  # Should show same keys via tunnel
-```
-
-## Production Security Checklist
-
-### Infrastructure Security
-
-- [ ] SSH key-based authentication only (no passwords)
-- [ ] SSH agent forwarding configured properly
-- [ ] Firewall configured with minimal open ports
-- [ ] System packages updated regularly
-- [ ] Dedicated validator user with minimal privileges
-- [ ] Log rotation configured and working
-- [ ] Monitoring dashboard secured
-
-### Development Security
-
-- [ ] Development VM isolated from production
-- [ ] No credentials stored in development environment
-- [ ] Source code integrity verification
-- [ ] Binary builds reproducible and verified
-- [ ] Git commits signed with GPG
-- [ ] GitHub access via SSH agent forwarding only
-
-### Validator Security
-
-- [ ] Validator signing keys stored separately (hardware/air-gapped)
-- [ ] Validator process runs as dedicated user
-- [ ] Network connections limited to required endpoints
-- [ ] Logs monitored for security events
-- [ ] Regular security updates applied
-- [ ] Backup/recovery procedures tested
-
-### Operational Security
-
-- [ ] Access logs monitored regularly
-- [ ] Failed authentication attempts tracked
-- [ ] Unusual network activity investigated
-- [ ] Process integrity verified regularly
-- [ ] File system integrity monitored
-- [ ] Incident response procedures documented
-
-## Security Best Practices
-
-### For Developers
-
-1. **Use hardware security keys** for GitHub authentication
-2. **Keep development keys secure** on local machines only
-3. **Regularly rotate SSH keys** and update server access
-4. **Use GPG signing** for all commits
-5. **Verify binary integrity** before deployment
-6. **Monitor for unauthorized access** to development systems
-
-### For Operators
-
-1. **Isolate validator operations** from development workflows
-2. **Monitor validator processes** continuously
-3. **Implement proper backup procedures** for configuration only
-4. **Use dedicated networks** for validator communication
-5. **Regularly audit system access** and permissions
-6. **Keep security documentation** up to date
-
-### For Infrastructure
-
-1. **Implement defense in depth** across all layers
-2. **Use principle of least privilege** for all access
-3. **Monitor and log all security-relevant events**
-4. **Regularly test incident response procedures**
-5. **Keep all systems updated** with security patches
-6. **Implement proper network segmentation**
-
-## Emergency Response
+## Incident Response
 
 ### Suspected Compromise
 
-**Immediate Actions:**
-1. **Isolate affected systems** from network
-2. **Preserve logs** and evidence
-3. **Verify validator key security** (should be unaffected)
-4. **Assess scope** of potential compromise
-5. **Implement containment** measures
+**Immediate Actions**:
+1. **Isolate**: Disconnect validator from network
+2. **Assess**: Determine scope of potential compromise
+3. **Preserve**: Take forensic images, preserve logs
+4. **Communicate**: Notify relevant stakeholders
 
-**Recovery Actions:**
-1. **Rebuild compromised systems** from clean state
-2. **Rotate all infrastructure keys** and credentials
-3. **Verify validator signing keys** remain secure
-4. **Update security procedures** based on lessons learned
-5. **Monitor for ongoing threats**
+**Recovery Options**:
+```bash
+# Complete validator rebuild (if server compromised):
+# 1. Build new server with new SSH keys
+# 2. Restore validator identity from backup
+VALIDATOR_ENCRYPTED_IDENTITY_KEY=~/.valops/age/identity-backup-{peer-id}.age validator-init
+# 3. Resume operations with monitoring
+```
 
-### Security Contact
+### Age Key Compromise
 
-For security issues or questions:
-- Create a private issue in the repository
-- Follow responsible disclosure practices
-- Include detailed information about potential vulnerabilities
-- Allow reasonable time for response and remediation
+**If age private keys are compromised**:
+1. **Generate new validator identity** (new keypair required)
+2. **Re-register** with new peer ID
+3. **Decommission** old validator completely
+4. **Investigate** how compromise occurred
 
-**Remember: The most critical security principle is that validator signing keys (the actual cryptocurrency keys) are never exposed to any part of this development or deployment infrastructure.**
+## Compliance Considerations
+
+### Data Protection
+- No personally identifiable information stored
+- Validator identity is cryptographic keypair only
+- Logs contain operational data, network communications
+
+### Audit Requirements
+- All operations logged with timestamps
+- Identity backup/restore operations auditable
+- Change management via version control
+
+### Regulatory Alignment
+- Air-gapped identity generation supports compliance requirements
+- Key separation aligns with financial services security standards
+- Monitoring capabilities support operational risk management
+
+## Advanced Security Options
+
+### Hardware Security Modules (HSM)
+Consider HSM integration for:
+- Age private key protection
+- Validator identity key generation
+- Hardware-backed attestation
+
+### Network Segmentation
+For large deployments:
+- Dedicated VLAN for validator operations
+- Jump boxes for administrative access
+- Separate monitoring network
+
+### Multi-Signature Operations
+Future enhancement options:
+- Multi-party age key management
+- Threshold signatures for validator operations
+- Governance controls for configuration changes
+
+---
+
+**Security questions?** → Contact security team | **Production deployment?** → [OPERATIONS.md](OPERATIONS.md) | **Identity generation?** → [IDENTITY-GENERATION.md](IDENTITY-GENERATION.md)

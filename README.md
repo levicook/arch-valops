@@ -167,17 +167,15 @@ valops/
 ├── resources/                        # Deployable validator scripts
 │   ├── run-validator                 # Validator startup script
 │   └── halt-validator                # Validator shutdown script
-└── docs/                             # Detailed documentation
-    ├── API.md                        # Utility function reference
-    ├── ARCHITECTURE.md               # Development architecture
-    ├── BINARY-SYNC.md                # Binary synchronization system guide
-    ├── DEVELOPMENT.md                # Testing and development workflow
-    ├── IDENTITY-GENERATION.md        # Secure identity creation workflow
-    ├── MIGRATION.md                  # Migration guide from older versions
-    ├── MONITORING.md                 # Monitoring and observability
-    ├── OPERATIONS.md                 # Operational procedures
-    ├── QUICK-START.md                # Complete setup walkthrough
-    └── SECURITY.md                   # Security model and analysis
+└── docs/                             # Streamlined documentation (7 focused guides)
+    ├── QUICK-START.md                # New users: Get running in 30 minutes
+    ├── OPERATIONS.md                 # Prod operators: Daily management
+    ├── SECURITY.md                   # Security teams: Threat analysis & recommendations
+    ├── MANAGEMENT.md                 # Existing users: Binary updates & migrations
+    ├── OBSERVABILITY.md              # SRE/DevOps: Monitoring & automation
+    ├── CONTRIBUTING.md               # Contributors: Architecture & development
+    ├── IDENTITY-GENERATION.md        # Security teams: Offline identity creation
+    └── legacy/                       # Previous documentation (reference only)
 ```
 
 ## Core Operations
@@ -312,24 +310,24 @@ This toolkit implements **defense in depth** with multiple isolation layers:
 
 ## Documentation
 
-### 🚀 Getting Started
-- **[Quick Start Guide](docs/QUICK-START.md)** - Complete setup walkthrough for new users
-- **[Migration Guide](docs/MIGRATION.md)** - Upgrading from older valops versions
-- **[Identity Generation Guide](docs/IDENTITY-GENERATION.md)** - Secure offline identity creation and deployment
-- **[Operations Guide](docs/OPERATIONS.md)** - Day-to-day validator management and maintenance
+### 🚀 **Getting Started**
+- **[Quick Start Guide](docs/QUICK-START.md)** - New users: Get validator running in 30 minutes
+- **[Operations Guide](docs/OPERATIONS.md)** - Production operators: Daily management & troubleshooting  
+- **[Security Guide](docs/SECURITY.md)** - Security teams: Threat analysis & production recommendations
 
-### 📊 Monitoring & Operations
-- **[Monitoring Guide](docs/MONITORING.md)** - Comprehensive monitoring, alerting, and observability
-- **[Binary Sync Guide](docs/BINARY-SYNC.md)** - Binary synchronization system with dual strategies
-- **[API Reference](docs/API.md)** - Complete reference for `lib.sh` utility functions
+### 🔧 **Management & Operations**  
+- **[Management Guide](docs/MANAGEMENT.md)** - Existing users: Binary updates, upgrades & migrations
+- **[Observability Guide](docs/OBSERVABILITY.md)** - SRE/DevOps: Monitoring, alerting & automation
+- **[Identity Generation Guide](docs/IDENTITY-GENERATION.md)** - Security teams: Secure offline identity creation
 
-### 🏗️ Architecture & Development
-- **[Architecture Guide](docs/ARCHITECTURE.md)** - Detailed development architecture and workflow
-- **[Security Guide](docs/SECURITY.md)** - Security model, key isolation, and threat analysis
-- **[Development Guide](docs/DEVELOPMENT.md)** - Testing, debugging, and contribution workflow
+### 👩‍💻 **Development & Contributing**
+- **[Contributing Guide](docs/CONTRIBUTING.md)** - Contributors: System architecture & development workflow
 
 ## Quick Links
 
 - **New to validators?** → Start with [Quick Start Guide](docs/QUICK-START.md)
-- **Need identity setup?** → See [Identity Generation Guide](docs/IDENTITY-GENERATION.md)
-- **Need monitoring?** → See [Monitoring Guide](docs/MONITORING.md)
+- **Production operator?** → See [Operations Guide](docs/OPERATIONS.md) for daily management
+- **Security evaluation?** → See [Security Guide](docs/SECURITY.md) for threat analysis
+- **Need binary updates?** → See [Management Guide](docs/MANAGEMENT.md) for upgrades
+- **Setting up monitoring?** → See [Observability Guide](docs/OBSERVABILITY.md)
+- **Want to contribute?** → See [Contributing Guide](docs/CONTRIBUTING.md)
