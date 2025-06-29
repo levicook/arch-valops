@@ -6,7 +6,7 @@
 
 - 🔐 **Encrypted Identity Management** - Secure peer identity lifecycle with automatic backup/restore
 - 🔒 **Security-First Architecture** - Complete isolation of signing keys from development infrastructure
-- 📊 **Real-Time Monitoring** - Comprehensive tmux dashboard with process, network, and log monitoring  
+- 📊 **Real-Time Monitoring** - Comprehensive tmux dashboard with process, network, and log monitoring
 - 🚀 **Hybrid Development Model** - Build in VMs, deploy on bare metal for optimal performance
 - 🔄 **Infrastructure-as-Code** - Idempotent, version-controlled validator operations
 - 🌐 **Zero-Trust Deployment** - SSH tunneling with agent forwarding, no credentials stored on servers
@@ -27,8 +27,10 @@ git clone https://github.com/levicook/arch-valops.git ~/valops && cd ~/valops &&
 # 2. Setup age encryption keys (one-time)
 setup-age-keys
 
-# 3. Sync latest binaries from dev VM (if using hybrid development)
-sync-bins
+# 3. Sync latest binaries (if using hybrid development)
+SYNC_STRATEGY_ARCH=vm sync-arch-bins       # Arch binaries from dev VM
+SYNC_STRATEGY_BITCOIN=vm sync-bitcoin-bins # Bitcoin binaries from dev VM
+sync-titan-bins                            # Titan binary from dev VM
 
 # 4. Use pre-configured testnet environment
 cd validators/testnet
@@ -74,7 +76,7 @@ The project includes ready-to-use validator environments with sensible defaults:
 cd validators/testnet && direnv allow
 # Sets: VALIDATOR_USER=testnet-validator, ARCH_NETWORK_MODE=testnet, endpoints, etc.
 
-# Mainnet validator  
+# Mainnet validator
 cd validators/mainnet && direnv allow
 # Sets: VALIDATOR_USER=mainnet-validator, ARCH_NETWORK_MODE=mainnet, endpoints, etc.
 
@@ -120,7 +122,7 @@ VALIDATOR_ENCRYPTED_IDENTITY_KEY=validator-identity.age validator-init
 
 **Recovery Process:**
 ```bash
-# Restore from backup (same process as original deployment) 
+# Restore from backup (same process as original deployment)
 VALIDATOR_ENCRYPTED_IDENTITY_KEY=~/.valops/age/identity-backup-{peer-id}.age validator-init
 
 # Always create new backup after recovery
@@ -154,7 +156,10 @@ valops/
 │   ├── validator-up                  # Start validator process
 │   ├── validator-down                # Stop validator process
 │   ├── validator-dashboard           # Comprehensive monitoring dashboard
-│   └── sync-bins                     # Binary synchronization from dev VM
+│   ├── sync-arch-bins               # Arch Network binary synchronization
+│   ├── sync-bitcoin-bins            # Bitcoin Core binary synchronization
+│   ├── sync-titan-bins              # Titan binary synchronization
+│   └── sync-lib.sh                  # Shared sync utilities
 ├── validators/                       # Pre-configured environments
 │   ├── testnet/.envrc                # Testnet configuration
 │   ├── mainnet/.envrc                # Mainnet configuration
@@ -165,6 +170,7 @@ valops/
 └── docs/                             # Detailed documentation
     ├── API.md                        # Utility function reference
     ├── ARCHITECTURE.md               # Development architecture
+    ├── BINARY-SYNC.md                # Binary synchronization system guide
     ├── DEVELOPMENT.md                # Testing and development workflow
     ├── IDENTITY-GENERATION.md        # Secure identity creation workflow
     ├── MIGRATION.md                  # Migration guide from older versions
@@ -184,7 +190,9 @@ check-env   # Comprehensive host security assessment (run first)
 ### Environment Setup
 ```bash
 setup-age-keys  # Setup age encryption keys (one-time)
-sync-bins       # Sync latest binaries from development VM
+sync-arch-bins       # Sync Arch Network binaries (release/vm strategies)
+sync-bitcoin-bins    # Sync Bitcoin Core binaries (release/vm strategies)
+sync-titan-bins      # Sync Titan binary (vm strategy only)
 ```
 
 ### Validator Lifecycle
@@ -251,7 +259,7 @@ All scripts work from any directory thanks to intelligent project root detection
 # Works from project root
 cd ~/valops && validator-up
 
-# Works from subdirectories  
+# Works from subdirectories
 cd ~/valops/docs && validator-up
 
 # Works from pre-configured environments
@@ -287,7 +295,7 @@ validator-up  # Uses testnet configuration
 This toolkit implements **defense in depth** with multiple isolation layers:
 
 1. **Development Keys** (SSH, GPG, GitHub) - Isolated to developer laptop via agent forwarding
-2. **Infrastructure Keys** - Minimal scope server access keys  
+2. **Infrastructure Keys** - Minimal scope server access keys
 3. **Validator Signing Keys** - Completely separate, hardware-secured, never touched by this toolkit
 
 **Security Guarantee**: Even total compromise of valops infrastructure cannot access validator funds.
@@ -310,13 +318,14 @@ This toolkit implements **defense in depth** with multiple isolation layers:
 - **[Identity Generation Guide](docs/IDENTITY-GENERATION.md)** - Secure offline identity creation and deployment
 - **[Operations Guide](docs/OPERATIONS.md)** - Day-to-day validator management and maintenance
 
-### 📊 Monitoring & Operations  
+### 📊 Monitoring & Operations
 - **[Monitoring Guide](docs/MONITORING.md)** - Comprehensive monitoring, alerting, and observability
+- **[Binary Sync Guide](docs/BINARY-SYNC.md)** - Binary synchronization system with dual strategies
 - **[API Reference](docs/API.md)** - Complete reference for `lib.sh` utility functions
 
 ### 🏗️ Architecture & Development
 - **[Architecture Guide](docs/ARCHITECTURE.md)** - Detailed development architecture and workflow
-- **[Security Guide](docs/SECURITY.md)** - Security model, key isolation, and threat analysis  
+- **[Security Guide](docs/SECURITY.md)** - Security model, key isolation, and threat analysis
 - **[Development Guide](docs/DEVELOPMENT.md)** - Testing, debugging, and contribution workflow
 
 ## Quick Links

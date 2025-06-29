@@ -105,7 +105,7 @@ cd validators/testnet && direnv allow
 # Sets: VALIDATOR_USER=testnet-validator, ARCH_NETWORK_MODE=testnet, etc.
 
 # Mainnet validator
-cd validators/mainnet && direnv allow  
+cd validators/mainnet && direnv allow
 # Sets: VALIDATOR_USER=mainnet-validator, ARCH_NETWORK_MODE=mainnet, etc.
 
 # Development network
@@ -181,4 +181,4 @@ validator-up --user testnet-validator
 
 ---
 
-**🚀 Ready to use the new patterns?** Check out the updated [README.md](README.md) for complete examples and documentation. 
+**🚀 Ready to use the new patterns?** Check out the updated [README.md](README.md) for complete examples and documentation.

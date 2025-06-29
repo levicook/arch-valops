@@ -51,13 +51,13 @@ tar -czf valops-age-backup-$(date +%Y%m%d).tar.gz ~/.valops/age/
 ```
 
 > **Design Note: No Separate Restore Process**
-> 
+>
 > The backup system is intentionally designed with perfect symmetry - backup files are created in exactly the same `.age` format as original encrypted identity files. This means:
 > - **No special restore command needed** - `validator-init` handles both original deployments and restores
 > - **Perfect interoperability** - backup files work identically to original encrypted keys
 > - **Simple disaster recovery** - same process whether using original key or backup
 > - **Reduced complexity** - one encryption format, one deployment process
-> 
+>
 > This architectural choice eliminates the complexity of separate backup/restore workflows while maintaining complete functionality.
 
 ### Disaster Recovery
@@ -101,7 +101,9 @@ This tool evaluates SSH security, firewall configuration, intrusion prevention, 
 ./setup-age-keys
 
 # 3. Sync binaries from development VM
-./sync-bins
+SYNC_STRATEGY_ARCH=vm sync-arch-bins       # Arch binaries from dev VM
+SYNC_STRATEGY_BITCOIN=vm sync-bitcoin-bins # Bitcoin binaries from dev VM
+sync-titan-bins                            # Titan binary from dev VM
 
 # 4. Initialize validator with encrypted identity (one-time)
 ./validator-init --encrypted-identity-key validator-identity.age --network testnet --user testnet-validator
@@ -119,7 +121,10 @@ which validator
 ./validator-up --user testnet-validator  # Updates scripts automatically
 
 # Update binaries (after rebuilding in dev-env)
-./sync-bins  # Only transfers if binaries changed
+# Sync all binaries (only transfers if changed)
+SYNC_STRATEGY_ARCH=vm sync-arch-bins
+SYNC_STRATEGY_BITCOIN=vm sync-bitcoin-bins
+sync-titan-bins
 ./validator-down --user testnet-validator
 ./validator-up --user testnet-validator  # Restart with new binaries
 
@@ -157,7 +162,7 @@ The `--clobber` operation includes automatic safety mechanisms:
 # Creating emergency backup before removal...
 # ✓ All identity backups completed
 # ✓ Emergency backup(s) created before removal
-# 
+#
 # Proceeding with complete removal in 3 seconds...
 # Press Ctrl+C to abort!
 ```
@@ -579,7 +584,9 @@ sudo apt update && sudo apt upgrade -y
 # Update validator binaries (if needed)
 # 1. Build new binaries in dev-env VM
 # 2. Sync to bare metal
-./sync-bins
+SYNC_STRATEGY_ARCH=vm sync-arch-bins       # Arch binaries from dev VM
+SYNC_STRATEGY_BITCOIN=vm sync-bitcoin-bins # Bitcoin binaries from dev VM
+sync-titan-bins                            # Titan binary from dev VM
 
 # 3. Restart validator if binaries changed
 ./validator-down --user testnet-validator
@@ -642,7 +649,7 @@ mkdir -p "$BACKUP_DIR"
 
 # Copy configuration and scripts
 cp -r resources/ "$BACKUP_DIR/"
-cp lib.sh setup-age-keys validator-init validator-up validator-down sync-bins validator-dashboard "$BACKUP_DIR/"
+cp lib.sh setup-age-keys validator-init validator-up validator-down sync-arch-bins sync-bitcoin-bins sync-titan-bins sync-lib.sh validator-dashboard "$BACKUP_DIR/"
 
 # Copy validator-specific configuration
 sudo cp -r /home/testnet-validator/{run-validator,halt-validator} "$BACKUP_DIR/" 2>/dev/null || true
@@ -710,7 +717,17 @@ validator --version 2>/dev/null || echo "Binary issue"
 
 **Solutions:**
 1. Verify initialization: `./validator-init --encrypted-identity-key validator-identity.age --network testnet --user testnet-validator`
-2. Check binary installation: `./sync-bins`
+2. Check binary installation:
+   ```bash
+   # For development binaries
+   SYNC_STRATEGY_ARCH=vm sync-arch-bins
+   SYNC_STRATEGY_BITCOIN=vm sync-bitcoin-bins
+   sync-titan-bins
+
+   # For release binaries
+   ARCH_VERSION=v0.5.3 sync-arch-bins
+   BITCOIN_VERSION=29.0 sync-bitcoin-bins
+   ```
 3. Review configuration: Check environment variables
 4. Check disk space: `df -h`
 
@@ -809,4 +826,4 @@ source lib.sh
 ./validator-up --user testnet-validator
 ```
 
-This comprehensive operations guide provides everything needed for day-to-day validator management using the new architecture while maintaining the same level of operational excellence. 
+This comprehensive operations guide provides everything needed for day-to-day validator management using the new architecture while maintaining the same level of operational excellence.

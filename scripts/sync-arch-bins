@@ -1,0 +1,114 @@
+#!/bin/bash
+#
+# sync-arch-bins - Sync Arch Network binaries
+#
+# Downloads validator and arch-cli binaries from official releases (default)
+# or syncs from development VM (fallback)
+#
+# Usage:
+#   # Environment variables (recommended):
+#   SYNC_STRATEGY_ARCH=release ARCH_VERSION=v0.5.3 sync-arch-bins
+#
+#   # Or traditional flags:
+#   sync-arch-bins --strategy vm --version v0.5.3
+#
+set -euo pipefail
+source "$(dirname "$0")/sync-lib.sh"
+
+# Usage function
+usage() {
+    echo "Usage: sync-arch-bins [options]"
+    echo ""
+    echo "Environment Variables (recommended):"
+    echo "  SYNC_STRATEGY_ARCH               Sync strategy (release|vm, default: release)"
+    echo "  ARCH_VERSION                     Version to download (v0.5.3, required for release strategy)"
+    echo "  VM_NAME                          VM name for vm strategy (default: dev-env)"
+    echo ""
+    echo "Options (override environment variables):"
+    echo "  --strategy <release|vm>          Sync strategy"
+    echo "  --version <version>              Version to sync"
+    echo "  --vm-name <name>                 VM name for strategy vm"
+    echo "  -h, --help                       Show this help"
+    echo ""
+    echo "Examples:"
+    echo "  # Release strategy (default, requires version):"
+    echo "  ARCH_VERSION=v0.5.3 sync-arch-bins"
+    echo "  # VM strategy (no version needed):"
+    echo "  SYNC_STRATEGY_ARCH=vm sync-arch-bins"
+    echo ""
+    echo "  # Using flags:"
+    echo "  sync-arch-bins --strategy release --version v0.5.3"
+}
+
+# Arch Network binaries to sync
+ARCH_BINARIES=(validator arch-cli)
+
+# Environment variables with defaults
+SYNC_STRATEGY_ARCH="${SYNC_STRATEGY_ARCH:-release}"
+VM_NAME="${VM_NAME:-dev-env}"
+
+# Parse command line arguments (override environment variables)
+while [[ $# -gt 0 ]]; do
+    case $1 in
+    --strategy)
+        SYNC_STRATEGY_ARCH="$2"
+        shift 2
+        ;;
+    --version)
+        ARCH_VERSION="$2"
+        shift 2
+        ;;
+    --vm-name)
+        VM_NAME="$2"
+        shift 2
+        ;;
+    -h | --help)
+        usage
+        exit 0
+        ;;
+    *)
+        log_error "Unknown option: $1"
+        usage
+        exit 1
+        ;;
+    esac
+done
+
+log_echo "Syncing Arch Network binaries..."
+log_echo "Strategy: $SYNC_STRATEGY_ARCH"
+
+case "$SYNC_STRATEGY_ARCH" in
+release)
+    # ARCH_VERSION is required for release strategy
+    if [[ -z "${ARCH_VERSION:-}" ]]; then
+        log_error "ARCH_VERSION must be specified for release strategy"
+        usage
+        exit 1
+    fi
+
+    # Download from official releases
+    PLATFORM=$(get_platform)
+    log_echo "Version: $ARCH_VERSION, Platform: $PLATFORM"
+
+    for binary in "${ARCH_BINARIES[@]}"; do
+        download_github_binary "Arch-Network/arch-node" "$binary" "$ARCH_VERSION" "$PLATFORM"
+    done
+    ;;
+
+vm)
+    # Sync from development VM
+    log_echo "VM: $VM_NAME"
+
+    for binary in "${ARCH_BINARIES[@]}"; do
+        sync_binary_from_vm "/home/ubuntu/Arch-Network/arch-network/target/release/$binary"
+    done
+    ;;
+
+*)
+    log_error "Unknown strategy: $SYNC_STRATEGY_ARCH (supported: release, vm)"
+    usage
+    exit 1
+    ;;
+esac
+
+log_echo "✓ Arch Network binaries sync complete"

@@ -409,4 +409,4 @@ For security issues or questions:
 - Include detailed information about potential vulnerabilities
 - Allow reasonable time for response and remediation
 
-**Remember: The most critical security principle is that validator signing keys (the actual cryptocurrency keys) are never exposed to any part of this development or deployment infrastructure.** 
+**Remember: The most critical security principle is that validator signing keys (the actual cryptocurrency keys) are never exposed to any part of this development or deployment infrastructure.**

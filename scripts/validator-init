@@ -106,7 +106,7 @@ if ! command -v age >/dev/null 2>&1; then
 fi
 
 if ! command -v validator >/dev/null 2>&1; then
-    log_echo "✗ validator binary not found. Install with ./sync-bins"
+    log_echo "✗ validator binary not found. Install with: ARCH_VERSION=v0.5.3 sync-arch-bins"
     exit 1
 fi
 

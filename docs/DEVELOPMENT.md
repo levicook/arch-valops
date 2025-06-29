@@ -53,7 +53,9 @@ make help
 
 ```bash
 # On bare metal - test sync process
-./sync-bins
+SYNC_STRATEGY_ARCH=vm sync-arch-bins
+SYNC_STRATEGY_BITCOIN=vm sync-bitcoin-bins
+sync-titan-bins
 
 # Verify installation
 which validator
@@ -158,11 +160,11 @@ common: ✓ Removed test-validator user
 
 #### `validator-init` fails with "encrypted identity file not found"
 **Problem**: Identity file missing or age keys not set up
-**Solutions**: 
+**Solutions**:
 - Run `./setup-age-keys` first
 - Ensure encrypted identity file exists and is accessible
 
-#### `sync-bins` fails with connection errors
+#### Binary sync fails with connection errors
 **Problem**: Cannot connect to development VM
 **Solutions**:
 - Verify `dev-env` VM is running: `multipass list`
@@ -231,7 +233,7 @@ git clone https://github.com/your-org/valops.git
 cd valops
 
 # Make scripts executable
-chmod +x setup-age-keys validator-init validator-up validator-down sync-bins validator-dashboard
+chmod +x setup-age-keys validator-init validator-up validator-down sync-arch-bins sync-bitcoin-bins sync-titan-bins validator-dashboard
 
 # Initialize environment
 ./setup-age-keys
@@ -257,7 +259,9 @@ clobber_user "test-user"
 # Test complete deployment workflow
 ./setup-age-keys
 ./validator-init --encrypted-identity-key validator-identity.age --network testnet --user testnet-validator
-./sync-bins
+SYNC_STRATEGY_ARCH=vm sync-arch-bins
+SYNC_STRATEGY_BITCOIN=vm sync-bitcoin-bins
+sync-titan-bins
 
 # Test validator operations
 ./validator-up --user testnet-validator
@@ -346,7 +350,10 @@ git checkout -b feature/new-functionality
 # 3. Test changes
 ./setup-age-keys  # Test age key setup
 ./validator-init --encrypted-identity-key validator-identity.age --network testnet --user testnet-validator  # Test initialization
-./sync-bins  # Test binary synchronization
+# Test binary synchronization
+SYNC_STRATEGY_ARCH=vm sync-arch-bins
+SYNC_STRATEGY_BITCOIN=vm sync-bitcoin-bins
+sync-titan-bins
 # Test specific functionality...
 
 # 4. Update documentation
@@ -399,7 +406,10 @@ git push origin feature/new-functionality
 # Monitor script performance
 time ./validator-init --encrypted-identity-key validator-identity.age --network testnet --user testnet-validator
 time ./validator-up --user testnet-validator
-time ./sync-bins
+# Time binary synchronization
+time sync-arch-bins      # Time Arch sync
+time sync-bitcoin-bins   # Time Bitcoin sync
+time sync-titan-bins     # Time Titan sync
 
 # Monitor resource usage
 htop  # System resources
@@ -458,11 +468,14 @@ multipass exec dev-env -- sudo apt upgrade -y
 ```bash
 # Test backup procedures
 ./validator-init --encrypted-identity-key validator-identity.age --network testnet --user testnet-validator  # Should handle clean deployment
-./sync-bins  # Should handle binary recovery
+# Test binary recovery
+SYNC_STRATEGY_ARCH=vm sync-arch-bins
+SYNC_STRATEGY_BITCOIN=vm sync-bitcoin-bins
+sync-titan-bins
 
 # Test monitoring recovery
 VALIDATOR_USER=testnet-validator ./validator-dashboard
 # Verify all monitoring functions work
 ```
 
-This development guide provides the foundation for contributing to and maintaining the valops toolkit while ensuring high quality and security standards. 
+This development guide provides the foundation for contributing to and maintaining the valops toolkit while ensuring high quality and security standards.

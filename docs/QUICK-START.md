@@ -6,7 +6,7 @@ This guide walks you through setting up your first Arch Network validator using 
 
 ### System Requirements
 - **Ubuntu/Debian bare metal server** with sudo access
-- **4GB+ RAM** and **20GB+ disk space** 
+- **4GB+ RAM** and **20GB+ disk space**
 - **Network connectivity** to Arch Network endpoints
 - **SSH access** configured for remote development
 
@@ -165,19 +165,25 @@ exit
 
 ```bash
 # Back on bare metal, sync binaries from dev-env VM
-./sync-bins
+SYNC_STRATEGY_ARCH=vm sync-arch-bins       # Arch binaries from dev-env VM
+SYNC_STRATEGY_BITCOIN=vm sync-bitcoin-bins # Bitcoin binaries from dev-env VM
+sync-titan-bins                            # Titan binary from dev-env VM
 ```
 
 **What this does:**
-- Connects to `dev-env` VM via SCP
-- Copies `validator` binary to `/usr/local/bin/`
-- Only updates files that have changed (efficient)
+- Connects to `dev-env` VM via optimized SCP
+- Copies binaries to `/usr/local/bin/` (validator, arch-cli, bitcoind, bitcoin-cli, titan)
+- Only updates files that have changed (efficient, checksum-based)
+- Uses specialized scripts for each binary type
 
 **Expected output:**
 ```
-sync-bins: Syncing validator from dev-env (10.142.17.80)...
-sync-bins: ✓ Updated validator binary
-sync-bins: ✓ Sync complete!
+lib: Syncing Arch Network binaries...
+lib: Strategy: vm
+lib: VM: dev-env
+lib: Syncing validator from dev-env...
+lib: ✓ Updated validator
+lib: ✓ Arch Network binaries sync complete
 ```
 
 ## Step 7: Generate Validator Identity (Secure Environment)
@@ -271,12 +277,12 @@ VALIDATOR_USER=testnet-validator ./validator-dashboard
 
 **Dashboard Layout:**
 - **Window 1 (welcome)**: Operational guidance and terminal
-- **Window 2 (dashboard)**: Status monitoring + live logs  
+- **Window 2 (dashboard)**: Status monitoring + live logs
 - **Window 3 (ops)**: System monitoring (htop + nethogs)
 
 **Navigation:**
 - `Ctrl+b + n`: Next window
-- `Ctrl+b + p`: Previous window  
+- `Ctrl+b + p`: Previous window
 - `Ctrl+b + arrows`: Switch panes
 - `Ctrl+b + d`: Detach (keeps running)
 
@@ -334,7 +340,7 @@ sudo apt install -y age
 age --version
 ```
 
-### `sync-bins` fails with "Connection refused"
+### Binary sync fails with "Connection refused"
 **Problem:** Can't connect to development VM
 **Solution:**
 ```bash
@@ -346,6 +352,9 @@ multipass start dev-env
 
 # Verify SSH connectivity
 multipass exec dev-env -- echo "test"
+
+# Test specific sync scripts
+SYNC_STRATEGY_ARCH=vm sync-arch-bins
 ```
 
 ### `validator-init` fails with "Age keys not found"
@@ -379,7 +388,9 @@ which validator
 ls -la /usr/local/bin/validator
 
 # Re-sync binaries
-./sync-bins
+SYNC_STRATEGY_ARCH=vm sync-arch-bins
+SYNC_STRATEGY_BITCOIN=vm sync-bitcoin-bins
+sync-titan-bins
 
 # Verify permissions
 sudo chmod +x /usr/local/bin/validator
@@ -408,7 +419,14 @@ tail -20 /home/testnet-validator/logs/validator.log
 ./validator-up --user testnet-validator  # Updates scripts automatically
 
 # After rebuilding binaries in dev-env
-./sync-bins  # Syncs latest binaries
+# Sync development binaries
+SYNC_STRATEGY_ARCH=vm sync-arch-bins
+SYNC_STRATEGY_BITCOIN=vm sync-bitcoin-bins
+sync-titan-bins
+
+# Or use release binaries for production
+ARCH_VERSION=v0.5.3 sync-arch-bins
+BITCOIN_VERSION=29.0 sync-bitcoin-bins
 ./validator-down --user testnet-validator
 ./validator-up --user testnet-validator  # Restart with new binaries
 ```
@@ -436,4 +454,4 @@ Now that your validator is running:
 - **Documentation**: Each guide has comprehensive troubleshooting sections
 - **Interactive Help**: Type `show-help` in any dashboard terminal pane
 
-**Congratulations!** You now have a running Arch Network validator with secure identity management and comprehensive monitoring. 🎉 
+**Congratulations!** You now have a running Arch Network validator with secure identity management and comprehensive monitoring. 🎉

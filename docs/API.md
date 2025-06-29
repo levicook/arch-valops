@@ -413,33 +413,33 @@ source lib.sh
 check_alert_conditions() {
     local user="$1"
     local alerts=0
-    
+
     # Check if validator is running
     if ! is_validator_running "$user"; then
         echo "ALERT: Validator process stopped"
         ((alerts++))
     fi
-    
+
     # Check RPC health
     if ! is_rpc_listening; then
         echo "ALERT: RPC server not responding"
         ((alerts++))
     fi
-    
+
     # Check for recent errors
     local recent_errors=$(get_recent_error_count "$user")
     if [ "$recent_errors" != "unknown" ] && [ "$recent_errors" -gt 5 ]; then
         echo "ALERT: High error rate ($recent_errors errors in last hour)"
         ((alerts++))
     fi
-    
+
     # Check network connectivity
     local titan_status=$(get_titan_connection_status "$user")
     if [ "$titan_status" = "disconnected" ]; then
         echo "ALERT: Disconnected from Titan network"
         ((alerts++))
     fi
-    
+
     return $alerts
 }
 
@@ -449,4 +449,4 @@ if check_alert_conditions "testnet-validator"; then
 else
     echo "Alerts detected - check validator status"
 fi
-``` 
+```

@@ -20,7 +20,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 #
 # OPERATING MODEL:
 # - Use multipass 'dev-env' VM to build Arch Network binaries
-# - Sync built binaries to bare metal with sync-bins
+# - Sync built binaries to bare metal with sync-arch-bins, sync-bitcoin-bins, sync-titan-bins
 # - Deploy validator operators with current resources using validator-init
 #
 

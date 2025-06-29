@@ -1,0 +1,170 @@
+#!/bin/bash
+#
+# sync-bitcoin-bins - Sync Bitcoin Core binaries
+#
+# Downloads Bitcoin Core binaries from official releases (default)
+# or syncs from development VM (fallback)
+#
+# Usage:
+#   # Environment variables (recommended):
+#   SYNC_STRATEGY_BITCOIN=release BITCOIN_VERSION=29.0 sync-bitcoin-bins
+#
+#   # Or traditional flags:
+#   sync-bitcoin-bins --strategy release --version 29.0
+#
+set -euo pipefail
+source "$(dirname "$0")/sync-lib.sh"
+
+# Usage function
+usage() {
+    echo "Usage: sync-bitcoin-bins [options]"
+    echo ""
+    echo "Environment Variables (recommended):"
+    echo "  SYNC_STRATEGY_BITCOIN            Sync strategy (release|vm, default: release)"
+    echo "  BITCOIN_VERSION                  Version to download (29.0, required for release strategy)"
+    echo "  VM_NAME                          VM name for vm strategy (default: dev-env)"
+    echo ""
+    echo "Options (override environment variables):"
+    echo "  --strategy <release|vm>          Sync strategy"
+    echo "  --version <version>              Version to sync"
+    echo "  --vm-name <name>                 VM name for strategy vm"
+    echo "  -h, --help                       Show this help"
+    echo ""
+    echo "Examples:"
+    echo "  # Release strategy (default, requires version):"
+    echo "  BITCOIN_VERSION=29.0 sync-bitcoin-bins"
+    echo "  # VM strategy (no version needed):"
+    echo "  SYNC_STRATEGY_BITCOIN=vm sync-bitcoin-bins"
+    echo ""
+    echo "  # Using flags:"
+    echo "  sync-bitcoin-bins --strategy release --version 29.0"
+}
+
+# Bitcoin binaries to sync (conservative list)
+BITCOIN_BINARIES=(bitcoind bitcoin-cli)
+
+# Environment variables with defaults
+SYNC_STRATEGY_BITCOIN="${SYNC_STRATEGY_BITCOIN:-release}"
+VM_NAME="${VM_NAME:-dev-env}"
+
+# Parse command line arguments (override environment variables)
+while [[ $# -gt 0 ]]; do
+    case $1 in
+    --strategy)
+        SYNC_STRATEGY_BITCOIN="$2"
+        shift 2
+        ;;
+    --version)
+        BITCOIN_VERSION="$2"
+        shift 2
+        ;;
+    --vm-name)
+        VM_NAME="$2"
+        shift 2
+        ;;
+    -h | --help)
+        usage
+        exit 0
+        ;;
+    *)
+        log_error "Unknown option: $1"
+        usage
+        exit 1
+        ;;
+    esac
+done
+
+# Bitcoin Core uses different platform naming
+get_bitcoin_platform() {
+    local arch=$(uname -m)
+    local os=$(uname -s | tr '[:upper:]' '[:lower:]')
+
+    case "$arch-$os" in
+    x86_64-linux) echo "x86_64-linux-gnu" ;;
+    aarch64-linux) echo "aarch64-linux-gnu" ;;
+    *)
+        log_error "Unsupported platform: $arch-$os"
+        return 1
+        ;;
+    esac
+}
+
+# Download Bitcoin Core tar.gz and extract binaries
+download_bitcoin_release() {
+    local version="$1"
+    local platform="$2"
+
+    log_echo "Downloading Bitcoin Core $version for $platform..."
+
+    # Bitcoin Core release URL pattern
+    local base_url="https://bitcoincore.org/bin/bitcoin-core-$version"
+    local archive_name="bitcoin-$version-$platform.tar.gz"
+    local download_url="$base_url/$archive_name"
+
+    local temp_dir=$(mktemp -d)
+    local archive_file="$temp_dir/$archive_name"
+
+    if curl -L -o "$archive_file" "$download_url"; then
+        # Extract archive
+        tar -xzf "$archive_file" -C "$temp_dir"
+
+        # Install binaries
+        local bitcoin_dir="$temp_dir/bitcoin-$version"
+        for binary in "${BITCOIN_BINARIES[@]}"; do
+            if [[ -f "$bitcoin_dir/bin/$binary" ]]; then
+                local target_path="/usr/local/bin/$binary"
+                if ! cmp -s "$bitcoin_dir/bin/$binary" "$target_path" 2>/dev/null; then
+                    sudo cp "$bitcoin_dir/bin/$binary" "$target_path"
+                    sudo chmod +x "$target_path"
+                    log_echo "✓ Updated $binary"
+                else
+                    log_echo "✓ $binary is up to date"
+                fi
+            fi
+        done
+    else
+        log_error "✗ Failed to download Bitcoin Core"
+        rm -rf "$temp_dir"
+        return 1
+    fi
+
+    rm -rf "$temp_dir"
+}
+
+log_echo "Syncing Bitcoin Core binaries..."
+log_echo "Strategy: $SYNC_STRATEGY_BITCOIN"
+
+case "$SYNC_STRATEGY_BITCOIN" in
+release)
+    # BITCOIN_VERSION is required for release strategy
+    if [[ -z "${BITCOIN_VERSION:-}" ]]; then
+        log_error "BITCOIN_VERSION must be specified for release strategy"
+        usage
+        exit 1
+    fi
+
+    # Download from official releases
+    PLATFORM=$(get_bitcoin_platform)
+    log_echo "Version: $BITCOIN_VERSION, Platform: $PLATFORM"
+
+    download_bitcoin_release "$BITCOIN_VERSION" "$PLATFORM"
+    ;;
+
+vm)
+    # Sync from development VM
+    log_echo "VM: $VM_NAME"
+
+    # Sync binaries from standard build location on VM
+    for binary in "${BITCOIN_BINARIES[@]}"; do
+        sync_binary_from_vm "/home/ubuntu/bitcoin/src/$binary"
+    done
+    ;;
+
+*)
+    log_error "Unknown strategy: $SYNC_STRATEGY_BITCOIN (supported: release, vm)"
+    usage
+    exit 1
+    ;;
+esac
+
+log_echo "✓ Bitcoin Core binaries sync complete"

@@ -1,0 +1,81 @@
+#!/bin/bash
+#
+# sync-titan-bins - Sync Titan Bitcoin indexer binary
+#
+# Syncs titan binary from development VM (only option currently)
+# Future: May support official releases if SaturnBTC/Titan adds them
+#
+# Usage:
+#   # Environment variables (recommended):
+#   VM_NAME=dev-env sync-titan-bins
+#
+#   # Or traditional flags:
+#   sync-titan-bins --vm-name dev-env
+#
+set -euo pipefail
+source "$(dirname "$0")/sync-lib.sh"
+
+# Usage function
+usage() {
+    echo "Usage: sync-titan-bins [options]"
+    echo ""
+    echo "Environment Variables (recommended):"
+    echo "  VM_NAME                          VM name for sync (default: dev-env)"
+    echo ""
+    echo "Options (override environment variables):"
+    echo "  --vm-name <name>                 VM name"
+    echo "  -h, --help                       Show this help"
+    echo ""
+    echo "Examples:"
+    echo "  # Using environment variables (recommended):"
+    echo "  sync-titan-bins                  # Sync from dev-env VM"
+    echo "  VM_NAME=my-vm sync-titan-bins"
+    echo ""
+    echo "  # Using flags:"
+    echo "  sync-titan-bins --vm-name my-vm"
+    echo ""
+    echo "Note: Currently only VM sync is supported."
+    echo "      Titan project doesn't provide binary releases yet."
+}
+
+# Environment variables with defaults
+SYNC_STRATEGY_TITAN="${SYNC_STRATEGY_TITAN:-vm}"
+VM_NAME="${VM_NAME:-dev-env}"
+
+# Parse command line arguments (override environment variables)
+while [[ $# -gt 0 ]]; do
+    case $1 in
+    --vm-name)
+        VM_NAME="$2"
+        shift 2
+        ;;
+    -h | --help)
+        usage
+        exit 0
+        ;;
+    *)
+        log_error "Unknown option: $1"
+        usage
+        exit 1
+        ;;
+    esac
+done
+
+log_echo "Syncing Titan binary..."
+log_echo "Strategy: $SYNC_STRATEGY_TITAN"
+
+case "$SYNC_STRATEGY_TITAN" in
+vm)
+    # Sync from development VM
+    log_echo "VM: $VM_NAME"
+    sync_binary_from_vm "/home/ubuntu/SaturnBTC/Titan/target/release/titan"
+    ;;
+
+*)
+    log_error "Unknown strategy: $SYNC_STRATEGY_TITAN (only 'vm' is currently supported)"
+    usage
+    exit 1
+    ;;
+esac
+
+log_echo "✓ Titan binary sync complete"

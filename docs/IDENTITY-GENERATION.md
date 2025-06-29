@@ -123,4 +123,4 @@ sudo -u testnet-validator validator --generate-peer-id --data-dir /home/testnet-
 
 **Error: "All options are required"**
 - `validator-init` requires all three parameters: `--encrypted-identity-key`, `--network`, and `--user`
-- Example: `./validator-init --encrypted-identity-key validator-identity.age --network testnet --user testnet-validator` 
+- Example: `./validator-init --encrypted-identity-key validator-identity.age --network testnet --user testnet-validator`

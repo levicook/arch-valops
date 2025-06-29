@@ -174,14 +174,18 @@ common: ✓ Removed test-validator user
 ### 1. Initial Setup
 ```bash
 ./setup-age-keys  # Setup encryption keys (one-time)
-./sync-bins       # Sync latest binaries from dev-env VM
+SYNC_STRATEGY_ARCH=vm sync-arch-bins       # Arch binaries from dev-env VM
+SYNC_STRATEGY_BITCOIN=vm sync-bitcoin-bins # Bitcoin binaries from dev-env VM
+sync-titan-bins                            # Titan binary from dev-env VM
 ./validator-init --encrypted-identity-key validator-identity.age --network testnet --user testnet-validator  # Initialize validator
 ```
 
 ### 2. Development Iteration
 ```bash
 # After rebuilding binaries in dev-env VM
-./sync-bins   # Sync latest binaries
+ARCH_VERSION=v0.5.3 sync-arch-bins      # Download Arch releases
+BITCOIN_VERSION=29.0 sync-bitcoin-bins    # Download Bitcoin releases
+sync-titan-bins                           # Sync Titan from VM
 
 # Restart validator with updated binaries
 ./validator-down --user testnet-validator
@@ -275,18 +279,18 @@ tail -f /home/testnet-validator/logs/validator.log
 
 **Design Philosophy - Backup/Restore Symmetry**:
 > **No Separate Restore Process Required**
-> 
+>
 > Backup files are created in exactly the same `.age` format as original encrypted identity files. This architectural choice provides:
 > - **Perfect Interoperability**: Backup files work identically to original encrypted keys
 > - **Unified Deployment Process**: `validator-init` handles both original deployments and restores
 > - **Simplified Disaster Recovery**: Same command, same process, whether using original or backup
 > - **Reduced Operational Complexity**: One encryption format, one deployment workflow
-> 
+>
 > Use cases:
 > ```bash
 > # Original deployment
 > ./validator-init --encrypted-identity-key original-identity.age --network testnet --user testnet-validator
-> 
+>
 > # Restore from backup (identical process)
 > ./validator-init --encrypted-identity-key ~/.valops/age/identity-backup-{peer-id}.age --network testnet --user testnet-validator
 > ```
@@ -294,20 +298,44 @@ tail -f /home/testnet-validator/logs/validator.log
 **Idempotency**: Safe to run multiple times (won't overwrite existing backups)
 **Dependencies**: Validator must be initialized, age keys must exist
 
-#### `sync-bins`
-**Purpose**: Synchronize binaries from development VM to bare metal
+#### Binary Synchronization System
 
-**What it does**:
-- Connects to multipass `dev-env` VM via SCP (robust vs multipass transfer)
-- Syncs `validator` binary to `/usr/local/bin/`
-- Only overwrites if files have changed (efficient, checksum-based)
-- Uses dynamic VM IP detection
+**Purpose**: Flexible binary management with dual strategies: official releases + development builds
 
-**Idempotency**: Safe to run multiple times
+**Scripts**:
+- `sync-arch-bins`    - Arch Network binaries (validator, arch-cli)
+- `sync-bitcoin-bins` - Bitcoin Core binaries (bitcoind, bitcoin-cli)
+- `sync-titan-bins`   - Titan binary (VM-only)
+- `sync-lib.sh`       - Shared utilities library
+
+**Strategies**:
+- **Release strategy** (default): Downloads official releases with explicit version requirements
+- **VM strategy**: Syncs from development VM for rapid iteration
+
+**Usage**:
+```bash
+# Release strategy (production)
+ARCH_VERSION=v0.5.3 sync-arch-bins
+BITCOIN_VERSION=29.0 sync-bitcoin-bins
+
+# VM strategy (development)
+SYNC_STRATEGY_ARCH=vm sync-arch-bins
+SYNC_STRATEGY_BITCOIN=vm sync-bitcoin-bins
+sync-titan-bins  # VM-only
+```
+
+**Key Features**:
+- Conservative binary selection (only essential binaries)
+- Exact asset matching (prevents ambiguity)
+- Atomic operations (temp files, safe transfers)
+- Environment variable interface with flag fallbacks
+- Comprehensive error handling with usage information
+
 **Dependencies**:
-- Multipass `dev-env` VM must be running
-- SSH access to VM must be configured
-- Source binaries must exist in VM at expected paths
+- **Release strategy**: Internet connectivity, jq, curl
+- **VM strategy**: Multipass `dev-env` VM running, SSH access configured
+
+See **[Binary Sync Guide](BINARY-SYNC.md)** for complete documentation.
 
 ### Validator Runtime Scripts
 
@@ -464,4 +492,4 @@ Backup and restore operations use identical file formats and processes. Backup f
 - **Binary Management**: Efficient sync with change detection
 - **Clean State Management**: Idempotent operations ensure consistent deployments
 
-This architecture provides a robust, secure, and maintainable foundation for Arch Network validator operations while maintaining clear separation between development and production environments. 
+This architecture provides a robust, secure, and maintainable foundation for Arch Network validator operations while maintaining clear separation between development and production environments.

@@ -208,8 +208,11 @@ fi
 
 # Check for pending updates
 SECURITY_UPDATES=$(apt list --upgradable 2>/dev/null | grep -c "security" || echo "0")
+SECURITY_UPDATES=$(echo "$SECURITY_UPDATES" | tr -d '\n\r ') # Strip whitespace
+
 TOTAL_UPDATES=$(apt list --upgradable 2>/dev/null | wc -l)
-TOTAL_UPDATES=$((TOTAL_UPDATES - 1)) # Remove header line
+TOTAL_UPDATES=$(echo "$TOTAL_UPDATES" | tr -d '\n\r ') # Strip whitespace
+TOTAL_UPDATES=$((TOTAL_UPDATES - 1))                   # Remove header line
 
 if [ "$TOTAL_UPDATES" -eq 0 ]; then
     log_good "System is up to date"

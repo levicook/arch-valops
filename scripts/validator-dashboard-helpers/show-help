@@ -36,7 +36,7 @@ echo -e "  • ${YELLOW}Excessive memory/CPU${NC} - check system monitoring"
 echo
 echo -e "${CYAN}⚡ COMMON OPERATIONS:${NC}"
 echo "  • Restart validator: switch to validator user, run ./halt-validator then ./run-validator"
-echo "  • Update binaries: exit dashboard, run ./sync-bins, restart validator"
+echo "  • Update binaries: exit dashboard, run sync-arch-bins/sync-bitcoin-bins/sync-titan-bins, restart validator"
 echo "  • Redeploy environment: exit dashboard, run ./validator-down && ./validator-up"
 echo "  • Check detailed logs: sudo su - \$VALIDATOR_USER, then grep/tail logs/"
 echo

@@ -38,7 +38,7 @@ The `validator-dashboard` provides a comprehensive monitoring interface through 
 ```bash
 # tmux navigation commands
 Ctrl+b then n          # Switch to next window
-Ctrl+b then p          # Switch to previous window  
+Ctrl+b then p          # Switch to previous window
 Ctrl+b then 1/2/3      # Switch to specific window
 Ctrl+b then arrow keys # Switch between panes within window
 Ctrl+b then d          # Detach (dashboard keeps running)
@@ -203,30 +203,30 @@ export VALIDATOR_USER=testnet-validator
 
 check_alerts() {
     local alerts=0
-    
+
     # Critical checks
     if ! is_validator_running "$VALIDATOR_USER"; then
         echo "$(date): CRITICAL - Validator stopped"
         ((alerts++))
     fi
-    
+
     if ! is_rpc_listening; then
         echo "$(date): CRITICAL - RPC down"
         ((alerts++))
     fi
-    
+
     if [ "$(get_titan_connection_status "$VALIDATOR_USER")" = "disconnected" ]; then
         echo "$(date): CRITICAL - Network disconnected"
         ((alerts++))
     fi
-    
+
     # Warning checks
     local recent_errors=$(get_recent_error_count "$VALIDATOR_USER")
     if [ "$recent_errors" != "unknown" ] && [ "$recent_errors" -gt 5 ]; then
         echo "$(date): WARNING - High error rate: $recent_errors"
         ((alerts++))
     fi
-    
+
     return $alerts
 }
 
@@ -333,10 +333,10 @@ echo "Block height: $BLOCK_HEIGHT"
    ```bash
    # Verify user exists
    id testnet-validator
-   
+
    # Check home directory
    sudo -u testnet-validator ls -la /home/testnet-validator/
-   
+
    # Verify binaries
    which validator
    ```
@@ -345,7 +345,7 @@ echo "Block height: $BLOCK_HEIGHT"
    ```bash
    # Check recent startup attempts
    grep "run-validator:" /home/testnet-validator/logs/validator.log | tail -5
-   
+
    # Look for error messages
    grep ERROR /home/testnet-validator/logs/validator.log | tail -10
    ```
@@ -379,7 +379,7 @@ echo "Block height: $BLOCK_HEIGHT"
    ```bash
    # Check if port is listening
    sudo ss -tlnp | grep 9002
-   
+
    # Test RPC manually
    curl -X POST -H "Content-Type: application/json" \
      -d '{"jsonrpc":"2.0","method":"get_block_count","params":[],"id":1}' \
@@ -390,7 +390,7 @@ echo "Block height: $BLOCK_HEIGHT"
    ```bash
    # Check connection logs
    grep -i "titan\|connection" /home/testnet-validator/logs/validator.log | tail -10
-   
+
    # Verify network connectivity
    curl -s https://titan-public-http.test.arch.network | head -5
    ```
@@ -401,7 +401,7 @@ echo "Block height: $BLOCK_HEIGHT"
    ```bash
    # Monitor data directory sizes
    watch -n 10 "du -sh /home/testnet-validator/data/"
-   
+
    # Check for log file growth
    ls -lah /home/testnet-validator/logs/
    ```
@@ -410,10 +410,10 @@ echo "Block height: $BLOCK_HEIGHT"
    ```bash
    # Stop validator
    sudo -u testnet-validator /home/testnet-validator/halt-validator
-   
+
    # Check data directory integrity
    sudo -u testnet-validator ls -la /home/testnet-validator/data/.arch_data/
-   
+
    # Review logs for corruption errors
    grep -i "corrupt\|error\|fail" /home/testnet-validator/logs/validator.log
    ```
@@ -443,7 +443,7 @@ echo "Block height: $BLOCK_HEIGHT"
    ```bash
    # Review error trends
    grep ERROR /home/testnet-validator/logs/validator.log* | wc -l
-   
+
    # Check restart patterns
    grep -E "Starting|Initializing" /home/testnet-validator/logs/validator.log* | wc -l
    ```
@@ -452,7 +452,7 @@ echo "Block height: $BLOCK_HEIGHT"
    ```bash
    # Check data growth trends
    du -sh /home/testnet-validator/data/.arch_data/testnet/ledger
-   
+
    # Review system resource usage patterns
    # (Use historical monitoring data if available)
    ```
@@ -461,7 +461,7 @@ echo "Block height: $BLOCK_HEIGHT"
    ```bash
    # Verify log rotation is working
    ls -la /home/testnet-validator/logs/
-   
+
    # Check system updates
    sudo apt list --upgradable
    ```
@@ -541,4 +541,4 @@ echo "# TYPE validator_error_count counter"
 echo "validator_error_count $(get_error_count "$VALIDATOR_USER")"
 ```
 
-This monitoring system provides comprehensive observability for your Arch Network validator with minimal overhead and maximum reliability. 
+This monitoring system provides comprehensive observability for your Arch Network validator with minimal overhead and maximum reliability.
