@@ -1,1 +1,16 @@
+# User-specific environment customizations
+.env
+
+# Age encrypted identity files (should be managed separately)
 *.age
+
+# Temporary files
+*.tmp
+*.log
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

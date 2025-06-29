@@ -7,7 +7,11 @@
 # Backup files can be used with validator-init to restore identities on same or different host.
 #
 # Usage:
-#   backup-identities --user <validator-username>
+#   # Environment variable (recommended):
+#   VALIDATOR_USER=testnet-validator backup-identities
+#
+#   # Or traditional flag (backward compatibility):
+#   backup-identities --user testnet-validator
 #
 # What it does:
 # - Finds all identity-secret files in validator's .arch_data tree
@@ -17,16 +21,16 @@
 # - Reports summary of successful/failed backups
 #
 set -euo pipefail
-source "$(dirname "$0")/lib.sh"
-cd "$PROJECT_ROOT"
+source "$(dirname "$0")/validator-lib.sh"
 
 log_echo() {
     echo "backup-identities: $@"
 }
 
-# Parse command line arguments
-VALIDATOR_USER=""
+# Initialize from environment variable (can be overridden by flag)
+VALIDATOR_USER="${VALIDATOR_USER:-}"
 
+# Parse command line arguments (override environment variable)
 while [[ $# -gt 0 ]]; do
     case $1 in
     --user)
@@ -36,11 +40,18 @@ while [[ $# -gt 0 ]]; do
     -h | --help)
         echo "Usage: backup-identities [options]"
         echo ""
-        echo "Options:"
+        echo "Environment Variable (recommended):"
+        echo "  VALIDATOR_USER                   Validator user to backup"
+        echo ""
+        echo "Options (override environment variable):"
         echo "  --user <username>                Validator user to backup"
         echo "  -h, --help                       Show this help"
         echo ""
         echo "Examples:"
+        echo "  # Using environment variable (recommended):"
+        echo "  VALIDATOR_USER=testnet-validator backup-identities"
+        echo ""
+        echo "  # Using flag (backward compatibility):"
         echo "  backup-identities --user testnet-validator"
         echo ""
         echo "This automatically discovers and backs up ALL validator identities:"
@@ -61,8 +72,9 @@ done
 
 # Validate arguments - user is required
 if [[ -z "$VALIDATOR_USER" ]]; then
-    log_echo "ERROR: --user option is required"
-    echo "Usage: backup-identities --user <username>"
+    log_echo "ERROR: VALIDATOR_USER environment variable or --user flag is required"
+    echo "Usage: VALIDATOR_USER=testnet-validator backup-identities"
+    echo "   or: backup-identities --user testnet-validator"
     exit 1
 fi
 

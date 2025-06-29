@@ -3,7 +3,6 @@
 # htop-monitor - System process monitoring
 #
 set -euo pipefail
-source "$(dirname "$0")/../lib.sh"
-cd "$PROJECT_ROOT"
+source "$(dirname "$0")/../validator-lib.sh"
 
 exec htop

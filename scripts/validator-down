@@ -1,0 +1,90 @@
+#!/bin/bash
+#
+# validator-down - Stop validator process
+#
+# Usage:
+#   # Environment variable (recommended):
+#   VALIDATOR_USER=testnet-validator validator-down [--clobber]
+#
+#   # Or traditional flags (backward compatibility):
+#   validator-down [--clobber] [--user testnet-validator]
+#
+set -euo pipefail
+source "$(dirname "$0")/validator-lib.sh"
+
+# Initialize from environment variable with default (can be overridden by flag)
+VALIDATOR_USER="${VALIDATOR_USER:-testnet-validator}"
+CLOBBER=false
+
+# Parse arguments (override environment variable)
+while [[ $# -gt 0 ]]; do
+    case $1 in
+    --user)
+        VALIDATOR_USER="$2"
+        shift 2
+        ;;
+    --clobber)
+        CLOBBER=true
+        shift
+        ;;
+    -h | --help)
+        echo "Usage: validator-down [options]"
+        echo ""
+        echo "Environment Variable:"
+        echo "  VALIDATOR_USER                   Validator user to stop (default: testnet-validator)"
+        echo ""
+        echo "Options:"
+        echo "  --user <username>                Override validator user"
+        echo "  --clobber                        Stop and completely remove validator setup"
+        echo "  -h, --help                       Show this help"
+        echo ""
+        echo "Examples:"
+        echo "  # Using environment variable (recommended):"
+        echo "  VALIDATOR_USER=testnet-validator validator-down"
+        echo "  VALIDATOR_USER=testnet-validator validator-down --clobber"
+        echo ""
+        echo "  # Using flags (backward compatibility):"
+        echo "  validator-down --user testnet-validator"
+        echo "  validator-down --clobber --user testnet-validator"
+        exit 0
+        ;;
+    *)
+        log_error "Unknown option: $1"
+        log_error "Usage: VALIDATOR_USER=<username> validator-down [--clobber]"
+        log_error "   or: validator-down [--clobber] --user <username>"
+        exit 1
+        ;;
+    esac
+done
+
+# Check if user exists
+if ! id "$VALIDATOR_USER" &>/dev/null; then
+    log_echo "✓ User '$VALIDATOR_USER' does not exist (nothing to stop)"
+    exit 0
+fi
+
+# Stop validator process
+stop_validator "$VALIDATOR_USER"
+
+# Handle clobber (complete removal)
+if [ "$CLOBBER" = true ]; then
+    log_echo "WARNING: About to completely remove validator '$VALIDATOR_USER'"
+    log_echo "  This will delete: user account, home directory, and ALL data"
+
+    # Attempt to create backup before destruction
+    log_echo "Creating emergency backup before removal..."
+
+    if backup_all_identities "$VALIDATOR_USER"; then
+        log_echo "✓ Emergency backup(s) created before removal"
+    else
+        log_echo "⚠ Failed to create emergency backups, refusing to clobber"
+        exit 1
+    fi
+
+    log_echo ""
+    log_echo "Proceeding with complete removal in 3 seconds..."
+    log_echo "Press Ctrl+C to abort!"
+    sleep 3
+
+    clobber_user "$VALIDATOR_USER"
+fi

@@ -1,0 +1,129 @@
+#!/bin/bash
+#
+# validator-init - One-time validator initialization and deployment
+#
+# Complete validator environment setup including identity deployment:
+# - Age encryption keys for secure identity deployment
+# - Validator user creation and environment setup
+# - Encrypted identity deployment (if provided)
+# - Complete validator operator configuration
+#
+# This is a one-time setup script (like 'terraform init')
+# After running this, use 'validator-up' to start the validator process
+#
+# Usage:
+#   # Environment variables (recommended):
+#   VALIDATOR_ENCRYPTED_IDENTITY_KEY=validator-identity.age ARCH_NETWORK_MODE=testnet VALIDATOR_USER=testnet-validator validator-init
+#
+#   # Or traditional flags (backward compatibility):
+#   validator-init --encrypted-identity-key validator-identity.age --network testnet --user testnet-validator
+#
+# What it does:
+# - Verifies age encryption keys exist (must run setup-age-keys first)
+# - Creates validator user and directory structure
+# - Deploys encrypted validator identity
+# - Deploys validator scripts and configuration
+# - Does NOT start the validator process (use validator-up)
+#
+# Idempotent: Safe to run multiple times
+#
+set -euo pipefail
+source "$(dirname "$0")/validator-lib.sh"
+
+log_echo() {
+    echo "validator-init: $@"
+}
+
+usage() {
+    echo "Usage: validator-init [options]"
+    echo ""
+    echo "Environment Variables (recommended):"
+    echo "  VALIDATOR_ENCRYPTED_IDENTITY_KEY  Path to encrypted validator identity file"
+    echo "  ARCH_NETWORK_MODE                 Network mode (devnet|testnet|mainnet)"
+    echo "  VALIDATOR_USER                    Validator user account name"
+    echo ""
+    echo "Options (override environment variables):"
+    echo "  --encrypted-identity-key <file>   Deploy encrypted validator identity"
+    echo "  --network <network>               Network mode (devnet|testnet|mainnet)"
+    echo "  --user <username>                 Validator user"
+    echo "  -h, --help                        Show this help"
+    echo ""
+    echo "Examples:"
+    echo "  # Using environment variables (recommended):"
+    echo "  VALIDATOR_ENCRYPTED_IDENTITY_KEY=validator-identity.age ARCH_NETWORK_MODE=testnet VALIDATOR_USER=testnet-validator validator-init"
+    echo ""
+    echo "  # Using flags (backward compatibility):"
+    echo "  validator-init --encrypted-identity-key validator.age --network testnet --user testnet-validator"
+}
+
+# Initialize from environment variables (can be overridden by flags)
+ENCRYPTED_IDENTITY_KEY="${VALIDATOR_ENCRYPTED_IDENTITY_KEY:-}"
+NETWORK_MODE="${ARCH_NETWORK_MODE:-}"
+VALIDATOR_USER="${VALIDATOR_USER:-}"
+
+# Parse command line arguments (override environment variables)
+while [[ $# -gt 0 ]]; do
+    case $1 in
+    --encrypted-identity-key)
+        ENCRYPTED_IDENTITY_KEY="$2"
+        shift 2
+        ;;
+    --network)
+        NETWORK_MODE="$2"
+        shift 2
+        ;;
+    --user)
+        VALIDATOR_USER="$2"
+        shift 2
+        ;;
+    -h | --help)
+        usage
+        exit 0
+        ;;
+    *)
+        echo "validator-init: Unknown option: $1"
+        usage
+        exit 1
+        ;;
+    esac
+done
+
+# Validate arguments - all are required
+if [[ -z "$ENCRYPTED_IDENTITY_KEY" ]] || [[ -z "$NETWORK_MODE" ]] || [[ -z "$VALIDATOR_USER" ]]; then
+    log_echo "ERROR: All parameters are required:"
+    log_echo "  VALIDATOR_ENCRYPTED_IDENTITY_KEY or --encrypted-identity-key"
+    log_echo "  ARCH_NETWORK_MODE or --network"
+    log_echo "  VALIDATOR_USER or --user"
+    echo ""
+    usage
+    exit 1
+fi
+
+# Check prerequisites
+if ! command -v age >/dev/null 2>&1; then
+    log_echo "✗ age binary not found. Install with: sudo apt install age"
+    exit 1
+fi
+
+if ! command -v validator >/dev/null 2>&1; then
+    log_echo "✗ validator binary not found. Install with ./sync-bins"
+    exit 1
+fi
+
+AGE_DIR="$HOME/.valops/age"
+if [[ ! -f "$AGE_DIR/host-identity.key" ]] || [[ ! -f "$AGE_DIR/host-identity.pub" ]]; then
+    log_echo "✗ Age keys not found. Run: ./setup-age-keys first"
+    exit 1
+fi
+
+init_validator_operator "$VALIDATOR_USER" "$ENCRYPTED_IDENTITY_KEY" "$NETWORK_MODE"
+
+# Create backup of all identities (compose with backup-identities script)
+VALIDATOR_USER="$VALIDATOR_USER" "$SCRIPT_ROOT/backup-identities"
+
+log_echo "✓ Initialized. Start with: validator-up"
+
+# Suggest cleanup of original file (if not a backup)
+if [[ "$ENCRYPTED_IDENTITY_KEY" != *"/.valops/age/"* ]]; then
+    log_echo "✓ Safe to delete: $ENCRYPTED_IDENTITY_KEY"
+fi

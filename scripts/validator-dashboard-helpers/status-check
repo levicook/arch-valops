@@ -3,8 +3,7 @@
 # status-check - Status information script for watch command
 #
 set -euo pipefail
-source "$(dirname "$0")/../lib.sh"
-cd "$PROJECT_ROOT"
+source "$(dirname "$0")/../validator-lib.sh"
 
 if [ -z "${VALIDATOR_USER:-}" ]; then
     echo "status-check: ERROR: VALIDATOR_USER not set"
@@ -96,7 +95,7 @@ esac
 # Get local block height and hash information
 if [ "$BLOCK_HEIGHT" != "unknown" ] && [ "$BLOCK_HEIGHT" != "null" ]; then
     echo -e "  ${GREEN}✅ Local block height: $BLOCK_HEIGHT${NC}"
-    
+
     # Show best block hash (truncated for readability)
     if [ "$BEST_BLOCK_HASH" != "unknown" ] && [ "$BEST_BLOCK_HASH" != "null" ]; then
         HASH_SHORT=$(echo "$BEST_BLOCK_HASH" | cut -c1-16)...

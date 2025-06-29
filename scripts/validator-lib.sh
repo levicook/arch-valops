@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 #
-# lib.sh - Shared utilities for Arch Network validator operations
+# validator-lib.sh - Validator-specific utilities for Arch Network operations
 #
+# Sources core utilities and provides validator-specific functions
+
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+
 # This library provides idempotent functions for managing validator infrastructure:
 # - User management (create/remove users safely)
 # - Validator operator deployment (directories, scripts, always-current resources)
@@ -20,14 +24,7 @@
 # - Deploy validator operators with current resources using validator-init
 #
 
-# Consistent output functions
-log_echo() {
-    echo "lib: $@"
-}
-
-log_error() {
-    echo "lib: $@" >&2
-}
+# Validator-specific functions (core utilities sourced from lib.sh)
 
 # Stop validator process
 stop_validator() {
@@ -52,37 +49,10 @@ stop_validator() {
     fi
 }
 
-# Securely shred validator identity files
+# Validator-specific wrapper for generic identity shredding
 shred_validator_identities() {
     local username="$1"
-    if id "$username" &>/dev/null; then
-        local home_dir="/home/$username"
-        if sudo test -d "$home_dir/data/.arch_data"; then
-            sudo find "$home_dir/data/.arch_data" -name "identity-secret" -type f -exec shred -vfz {} \; 2>/dev/null || true
-        fi
-    fi
-}
-
-# Idempotent user removal with secure shredding
-clobber_user() {
-    local username="$1"
-    if id "$username" &>/dev/null; then
-        shred_validator_identities "$username"
-        log_echo "Removing $username user..."
-        sudo userdel -r "$username"
-        log_echo "✓ Removed $username user"
-    fi
-}
-
-# Idempotent user creation
-create_user() {
-    local username="$1"
-
-    if ! id "$username" &>/dev/null; then
-        log_echo "Creating $username user..."
-        sudo useradd -r -m -s /bin/bash "$username"
-        log_echo "✓ Created $username user"
-    fi
+    shred_identity_files "$username" "data/.arch_data" "identity-secret"
 }
 
 # Idempotent validator operator removal with secure shredding
@@ -90,20 +60,22 @@ clobber_validator_operator() {
     local username="$1"
 
     if id "$username" &>/dev/null; then
-        shred_validator_identities "$username"
-
+        # Remove validator-specific files before generic user removal
         sudo -u "$username" rm -rf \
             "/home/$username/data/.arch_data" \
             "/home/$username/logs/validator.log" \
             "/home/$username/run-validator" \
-            "/home/$username/halt-validator"
-        log_echo "✓ Removed validator operator: $username"
-    fi
+            "/home/$username/halt-validator" 2>/dev/null || true
+        log_echo "✓ Removed validator operator files for: $username"
 
-    # Remove logrotate configuration
-    if [[ -f "/etc/logrotate.d/validator-$username" ]]; then
-        sudo rm "/etc/logrotate.d/validator-$username"
-        log_echo "✓ Removed logrotate config for $username"
+        # Remove logrotate configuration
+        if [[ -f "/etc/logrotate.d/validator-$username" ]]; then
+            sudo rm "/etc/logrotate.d/validator-$username"
+            log_echo "✓ Removed logrotate config for $username"
+        fi
+
+        # Use generic user removal (handles identity shredding)
+        clobber_user "$username" "data/.arch_data" "identity-secret"
     fi
 }
 
@@ -122,9 +94,6 @@ init_validator_operator() {
     # Deploy encrypted identity
     deploy_validator_identity "$username" "$encrypted_identity_key" "$network_mode"
 
-    # Create encrypted backup of the identity
-    backup_validator_identity "$username" "$network_mode"
-
     # Update scripts and configuration
     update_validator_operator "$username"
 }
@@ -141,12 +110,12 @@ update_validator_operator() {
     fi
 
     # Update validator scripts to latest versions
-    sudo cp ./resources/run-validator "$home_dir/run-validator"
-    sudo cp ./resources/halt-validator "$home_dir/halt-validator"
+    sudo cp "$PROJECT_ROOT/resources/run-validator" "$home_dir/run-validator"
+    sudo cp "$PROJECT_ROOT/resources/halt-validator" "$home_dir/halt-validator"
     sudo chown "$username:$username" "$home_dir/run-validator" "$home_dir/halt-validator"
     sudo chmod +x "$home_dir/run-validator" "$home_dir/halt-validator"
 
-    ensure_logrotate_enabled "$username"
+    ensure_logrotate_enabled "$username" "validator"
     ensure_gossip_enabled
 }
 
@@ -363,19 +332,7 @@ backup_all_identities() {
     return 0
 }
 
-git_root() {
-    git rev-parse --show-toplevel 2>/dev/null || {
-        log_error "✗ Not in a git repository"
-        exit 1
-    }
-}
-
-project_root() {
-    local lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    echo "$lib_dir"
-}
-
-export PROJECT_ROOT="$(project_root)"
+# Project root and script root exported by lib.sh
 
 # Validator inspection utilities
 # These functions return raw data without formatting for reuse across scripts
@@ -533,28 +490,7 @@ get_block_height_enhanced() {
     fi
 }
 
-# Ensure validator log rotation configuration is current
-ensure_logrotate_enabled() {
-    local username="$1"
-
-    log_echo "Ensuring log rotation configuration for $username..."
-    sudo tee "/etc/logrotate.d/validator-$username" >/dev/null <<EOF
-# Log rotation for validator operator: $username
-# Managed by valops
-/home/$username/logs/*.log {
-    daily
-    rotate 7
-    compress
-    delaycompress
-    missingok
-    notifempty
-    create 0644 $username $username
-    copytruncate
-    su $username $username
-}
-EOF
-    log_echo "✓ Ensured logrotate config for $username"
-}
+# (ensure_logrotate_enabled now provided by lib.sh)
 
 # Ensure validator gossip and RPC ports are properly configured
 ensure_gossip_enabled() {

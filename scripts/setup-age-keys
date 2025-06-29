@@ -1,7 +1,6 @@
 #!/bin/bash
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
-cd "$PROJECT_ROOT"
 
 # Setup age encryption keys for validator identity deployment
 # This creates the host keypair that will be used to decrypt validator identities
