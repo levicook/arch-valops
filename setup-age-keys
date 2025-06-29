@@ -53,8 +53,8 @@ cat "$PUBLIC_KEY_FILE"
 echo
 echo "📋 INSTRUCTIONS:"
 echo "1. Use the public key above as the recipient when encrypting validator identities"
-echo "2. Example encryption command:"
-echo "   age -r \"\$(cat $PUBLIC_KEY_FILE)\" -o validator-identity.tar.gz.age validator-identity.tar.gz"
+echo "2. Example identity generation and encryption command:"
+echo "   validator --generate-peer-id --data-dir \$(mktemp -d) | grep secret_key | cut -d'\"' -f4 | age -r \"\$(cat $PUBLIC_KEY_FILE)\" -o validator-identity.age"
 echo
 echo "⚠️  SECURITY:"
 echo "• Private key is stored at: $PRIVATE_KEY_FILE"

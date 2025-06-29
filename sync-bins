@@ -44,7 +44,7 @@ sync_bin() {
 
     log_echo "Syncing $binary_name from $VM_NAME ($VM_IP)..."
 
-    if scp "ubuntu@$VM_IP:$source_path" "$temp_file"; then
+    if scp "$VM_IP:$source_path" "$temp_file"; then
         if ! cmp -s "$temp_file" "$target_path" 2>/dev/null; then
             sudo cp "$temp_file" "$target_path"
             sudo chmod +x "$target_path"
@@ -62,7 +62,8 @@ sync_bin() {
 }
 
 # Sync binaries
-# arch-cli binary no longer needed - validator binary handles all functionality
-sync_bin "/home/ubuntu/arch-network/target/release/validator"
+sync_bin "/home/ubuntu/Arch-Network/arch-network/target/release/arch-cli"
+sync_bin "/home/ubuntu/Arch-Network/arch-network/target/release/validator"
+sync_bin "/home/ubuntu/SaturnBTC/Titan/target/release/titan"
 
 log_echo "✓ Sync complete!"
