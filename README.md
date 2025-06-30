@@ -312,10 +312,10 @@ This toolkit implements **defense in depth** with multiple isolation layers:
 
 ### 🚀 **Getting Started**
 - **[Quick Start Guide](docs/QUICK-START.md)** - New users: Get validator running in 30 minutes
-- **[Operations Guide](docs/OPERATIONS.md)** - Production operators: Daily management & troubleshooting  
+- **[Operations Guide](docs/OPERATIONS.md)** - Production operators: Daily management & troubleshooting
 - **[Security Guide](docs/SECURITY.md)** - Security teams: Threat analysis & production recommendations
 
-### 🔧 **Management & Operations**  
+### 🔧 **Management & Operations**
 - **[Management Guide](docs/MANAGEMENT.md)** - Existing users: Binary updates, upgrades & migrations
 - **[Observability Guide](docs/OBSERVABILITY.md)** - SRE/DevOps: Monitoring, alerting & automation
 - **[Identity Generation Guide](docs/IDENTITY-GENERATION.md)** - Security teams: Secure offline identity creation

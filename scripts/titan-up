@@ -1,3 +1,168 @@
 #!/bin/bash
+#
+# titan-up - Titan Rune Indexer IaC Management
+#
+# Ensures Titan infrastructure exists and service is running.
+# This is an Infrastructure as Code (IaC) tool - it declares desired state
+# and ensures reality matches that state.
+#
+# Usage:
+#   TITAN_USER=testnet-titan titan-up
+#   titan-up --user testnet-titan
+#
 set -euo pipefail
+source "$(dirname "$0")/lib.sh"
 source "$(dirname "$0")/titan-lib.sh"
+
+log_echo() {
+    echo "titan-up: $@"
+}
+
+# Declare desired state
+declare_titan_state() {
+    # Initialize from environment variables (no defaults - envrc handles those)
+    TITAN_USER="${TITAN_USER:-}"
+    TITAN_NETWORK_MODE="${TITAN_NETWORK_MODE:-}"
+
+    # Parse command line arguments (override environment variables)
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+        --user)
+            TITAN_USER="$2"
+            shift 2
+            ;;
+        --network)
+            TITAN_NETWORK_MODE="$2"
+            shift 2
+            ;;
+        -h | --help)
+            echo "Usage: titan-up [options]"
+            echo ""
+            echo "Environment Variables (recommended):"
+            echo "  TITAN_USER                       Titan user account"
+            echo "  TITAN_NETWORK_MODE               Network (testnet|mainnet|regtest|signet)"
+            echo ""
+            echo "Options (override environment variables):"
+            echo "  --user <username>                Titan user account"
+            echo "  --network <network>              Network mode"
+            echo "  -h, --help                       Show this help"
+            exit 0
+            ;;
+        *)
+            log_error "Unknown option: $1"
+            exit 1
+            ;;
+        esac
+    done
+
+    # Validate required parameters
+    if [[ -z "$TITAN_USER" ]]; then
+        log_error "TITAN_USER environment variable or --user flag is required"
+        echo "Usage: TITAN_USER=testnet-titan titan-up"
+        echo "   or: titan-up --user testnet-titan"
+        exit 1
+    fi
+
+    if [[ -z "$TITAN_NETWORK_MODE" ]]; then
+        log_error "TITAN_NETWORK_MODE environment variable or --network flag is required"
+        echo "Set in envrc or pass --network (testnet|mainnet|regtest|signet)"
+        exit 1
+    fi
+
+    log_echo "Desired state: user=$TITAN_USER, network=$TITAN_NETWORK_MODE"
+}
+
+# Ensure all infrastructure exists and is current
+ensure_titan_infrastructure() {
+    log_echo "Ensuring Titan infrastructure exists and is current..."
+
+    # Core infrastructure
+    create_user "$TITAN_USER"
+    ensure_service_directories "$TITAN_USER" "data" "logs"
+
+    # Service management
+    ensure_systemd_service_unit_installed "arch-titan@"
+
+    # Configuration
+    ensure_titan_configuration_current "$TITAN_USER" "$TITAN_NETWORK_MODE"
+
+    # Operational concerns
+    ensure_logrotate_enabled "$TITAN_USER" "titan"
+    ensure_titan_api_enabled "$TITAN_USER" "$TITAN_NETWORK_MODE"
+
+    log_echo "✓ Titan infrastructure is current"
+}
+
+# Ensure environment file is current
+ensure_titan_configuration_current() {
+    local username="$1"
+    local network_mode="$2"
+    local env_file="/home/$username/titan.env"
+
+    # Generate current environment and compare
+    local temp_env=$(mktemp)
+    trap "rm -f '$temp_env'" EXIT
+
+    generate_titan_env "$username" "$network_mode" >"$temp_env"
+
+    # Update if different or missing
+    if [[ ! -f "$env_file" ]] || ! cmp -s "$temp_env" "$env_file" 2>/dev/null; then
+        log_echo "Updating Titan environment..."
+        sudo cp "$temp_env" "$env_file"
+        sudo chown "$username:$username" "$env_file"
+        sudo chmod 600 "$env_file"
+        log_echo "✓ Titan environment updated"
+    fi
+}
+
+# Ensure service is running and healthy
+ensure_service_running() {
+    local service_name="arch-titan@$TITAN_USER"
+
+    # Start service if not running
+    if ! is_systemd_service_running "$service_name"; then
+        log_echo "Starting Titan service..."
+        sudo systemctl start "$service_name"
+        log_echo "✓ Titan service started"
+    else
+        log_echo "✓ Titan service already running"
+    fi
+
+    # Wait for API to be ready
+    local api_check="nc -z 127.0.0.1 3030"
+    wait_for_service_ready "$service_name" "$api_check" 30
+
+    # Verify health
+    verify_titan_healthy "$TITAN_USER"
+}
+
+# Verify service is healthy and report status
+verify_titan_healthy() {
+    local username="$1"
+
+    log_echo "Verifying Titan service health..."
+
+    # Check API endpoint
+    if ! nc -z 127.0.0.1 3030 2>/dev/null; then
+        log_error "✗ Titan API not responding on :3030"
+        return 1
+    fi
+
+    # Show basic status (if endpoints exist)
+    log_echo "✓ Titan service is healthy"
+    log_echo "  API: http://127.0.0.1:3030"
+    log_echo "  Network: $TITAN_NETWORK_MODE"
+    log_echo "  Status: systemctl status arch-titan@$username"
+    log_echo "  Logs: journalctl -u arch-titan@$username -f"
+}
+
+# Main execution: IaC pattern
+main() {
+    declare_titan_state "$@"
+    ensure_titan_infrastructure
+    ensure_service_running
+    log_echo "✓ Titan Rune Indexer infrastructure is ready and running"
+}
+
+# Execute main function with all arguments
+main "$@"

@@ -36,11 +36,11 @@ log_echo "$(date): Stopping Arch validator..."
 
 for PID in $VALIDATOR_PIDS; do
     log_echo "Stopping process $PID..."
-    
+
     # Step 1: Graceful shutdown with SIGTERM
     log_echo "  Sending SIGTERM for graceful shutdown..."
     kill -TERM "$PID" 2>/dev/null || true
-    
+
     # Wait up to 15 seconds for graceful shutdown
     for i in {1..15}; do
         if ! is_running "$PID"; then
@@ -50,11 +50,11 @@ for PID in $VALIDATOR_PIDS; do
         echo -n "." | tee -a "$LOG_FILE"
         sleep 1
     done
-    
+
     echo "" | tee -a "$LOG_FILE"
     log_echo "  Process $PID didn't stop gracefully, sending SIGKILL..."
     kill -KILL "$PID" 2>/dev/null || true
-    
+
     # Wait up to 5 seconds for SIGKILL
     for i in {1..5}; do
         if ! is_running "$PID"; then
@@ -63,11 +63,11 @@ for PID in $VALIDATOR_PIDS; do
         fi
         sleep 1
     done
-    
+
     # Step 3: Nuclear option - try with sudo
     log_echo "  Process $PID is stubborn, trying with sudo..."
     sudo kill -KILL "$PID" 2>/dev/null || true
-    
+
     # Final wait
     for i in {1..5}; do
         if ! is_running "$PID"; then
@@ -76,7 +76,7 @@ for PID in $VALIDATOR_PIDS; do
         fi
         sleep 1
     done
-    
+
     log_echo "  ✗ Failed to stop process $PID (may be in uninterruptible state)"
 done
 

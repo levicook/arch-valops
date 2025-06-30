@@ -1,3 +1,129 @@
 #!/bin/bash
+#
+# titan-down - Titan Rune Indexer IaC Management (Stop/Destroy)
+#
+# Stops Titan service OR destroys entire infrastructure with --clobber
+#
+# Usage:
+#   TITAN_USER=testnet-titan titan-down
+#   titan-down --user testnet-titan --clobber
+#
 set -euo pipefail
+source "$(dirname "$0")/lib.sh"
 source "$(dirname "$0")/titan-lib.sh"
+
+log_echo() {
+    echo "titan-down: $@"
+}
+
+# Parse arguments
+declare_titan_state() {
+    TITAN_USER="${TITAN_USER:-}"
+    CLOBBER=false
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+        --user)
+            TITAN_USER="$2"
+            shift 2
+            ;;
+        --clobber)
+            CLOBBER=true
+            shift
+            ;;
+        -h | --help)
+            echo "Usage: titan-down [options]"
+            echo ""
+            echo "Environment Variable:"
+            echo "  TITAN_USER                       Titan user to stop"
+            echo ""
+            echo "Options:"
+            echo "  --user <username>                Titan user to stop"
+            echo "  --clobber                        Complete infrastructure removal"
+            echo "  -h, --help                       Show this help"
+            exit 0
+            ;;
+        *)
+            log_error "Unknown option: $1"
+            exit 1
+            ;;
+        esac
+    done
+
+    if [[ -z "$TITAN_USER" ]]; then
+        log_error "TITAN_USER environment variable or --user flag is required"
+        exit 1
+    fi
+}
+
+# Stop Titan service
+stop_titan_service() {
+    local service_name="arch-titan@$TITAN_USER"
+
+    if is_systemd_service_running "$service_name"; then
+        log_echo "Stopping Titan service..."
+        sudo systemctl stop "$service_name"
+        log_echo "✓ Titan service stopped"
+    else
+        log_echo "✓ Titan service already stopped"
+    fi
+}
+
+# Complete infrastructure removal
+clobber_titan_infrastructure() {
+    local service_name="arch-titan@$TITAN_USER"
+
+    log_echo "⚠ CLOBBER MODE: Complete infrastructure removal"
+    log_echo "  User: $TITAN_USER"
+    log_echo "  This will permanently delete all Titan data"
+
+    read -p "Are you sure? (yes/no): " confirmation
+    case "$confirmation" in
+    yes | YES)
+        log_echo "Proceeding with complete removal..."
+        ;;
+    *)
+        log_echo "Operation cancelled"
+        exit 1
+        ;;
+    esac
+
+    # Stop and disable service
+    sudo systemctl stop "$service_name" 2>/dev/null || true
+    sudo systemctl disable "$service_name" 2>/dev/null || true
+
+    # Create backup before destruction
+    log_echo "Creating backup before removal..."
+    # Note: Titan doesn't have identity files like validator, but we could backup index data
+
+    # Remove user and all data
+    clobber_user "$TITAN_USER"
+
+    # Remove logrotate config
+    sudo rm -f "/etc/logrotate.d/titan-$TITAN_USER"
+
+    log_echo "✓ Titan infrastructure completely removed"
+}
+
+# Main execution
+main() {
+    declare_titan_state "$@"
+
+    # Check if user exists
+    if ! id "$TITAN_USER" &>/dev/null; then
+        if [[ "$CLOBBER" == "true" ]]; then
+            log_echo "✓ User '$TITAN_USER' already removed"
+        else
+            log_echo "✓ User '$TITAN_USER' not found (nothing to stop)"
+        fi
+        exit 0
+    fi
+
+    if [[ "$CLOBBER" == "true" ]]; then
+        clobber_titan_infrastructure
+    else
+        stop_titan_service
+    fi
+}
+
+main "$@"

@@ -152,11 +152,11 @@ if check_command ufw; then
             if echo "$UFW_STATUS" | grep -q "$PORT/tcp"; then
                 NETWORK_TYPE="unknown"
                 case "$PORT" in
-                    8333) NETWORK_TYPE="mainnet" ;;
-                    18333) NETWORK_TYPE="testnet" ;;
-                    48333) NETWORK_TYPE="testnet4" ;;
-                    38333) NETWORK_TYPE="signet" ;;
-                    18444) NETWORK_TYPE="regtest/devnet" ;;
+                8333) NETWORK_TYPE="mainnet" ;;
+                18333) NETWORK_TYPE="testnet" ;;
+                48333) NETWORK_TYPE="testnet4" ;;
+                38333) NETWORK_TYPE="signet" ;;
+                18444) NETWORK_TYPE="regtest/devnet" ;;
                 esac
                 BITCOIN_PORTS_OPEN="$BITCOIN_PORTS_OPEN $PORT($NETWORK_TYPE)"
             fi

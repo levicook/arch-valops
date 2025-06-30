@@ -1,0 +1,40 @@
+[Unit]
+Description=Bitcoin Core Daemon (%i)
+Documentation=https://bitcoin.org/
+After=network.target
+
+[Service]
+Type=simple
+User=%i
+Group=%i
+WorkingDirectory=/home/%i
+
+# Direct binary execution - no wrapper scripts
+ExecStart=/usr/local/bin/bitcoind -conf=/home/%i/bitcoin.conf
+
+# Automatic restart on failure
+Restart=always
+RestartSec=10
+StartLimitInterval=0
+
+# Logging
+StandardOutput=append:/home/%i/logs/bitcoin.log
+StandardError=append:/home/%i/logs/bitcoin.log
+
+# Resource limits
+LimitNOFILE=65536
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/%i
+# ProtectHome=tmpfs  # Conflicts with ReadWritePaths - disabled for now
+
+# Process management
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

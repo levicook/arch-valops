@@ -2,92 +2,20 @@
 #
 # bitcoin-lib.sh - Bitcoin-specific utilities for Bitcoin Core operations
 #
-# Sources core utilities and provides bitcoin-specific functions
+# Sources core utilities and provides bitcoin-specific functions for IaC management
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 # This library provides idempotent functions for managing Bitcoin Core infrastructure:
-# - User management (create/remove bitcoin users safely)
-# - Bitcoin operator deployment (directories, configuration, always-current resources)
-# - Process management (start/stop bitcoin daemon)
+# - Configuration generation (bitcoin.conf)
+# - Firewall configuration (P2P ports)
+# - Operational features (banlist application)
 #
 # DESIGN PHILOSOPHY:
 # - All functions are idempotent (safe for repeated execution)
-# - Deploy operations always ensure current state matches desired state
-# - Clobber operations safely remove resources when they exist
-# - Scripts fail fast with clear error messages when dependencies are missing
+# - Infrastructure functions only - no process management
+# - Systemd handles all process lifecycle
 #
-
-# Bitcoin-specific functions (core utilities sourced from lib.sh)
-
-# Check if bitcoin daemon is running
-is_bitcoin_running() {
-    local username="$1"
-
-    if ! id "$username" &>/dev/null; then
-        return 1
-    fi
-
-    # Check for bitcoind process owned by the user, excluding pgrep itself
-    if sudo -u "$username" pgrep -f "^bitcoind -conf" >/dev/null 2>&1; then
-        return 0
-    else
-        return 1
-    fi
-}
-
-# Stop bitcoin daemon
-stop_bitcoin() {
-    local username="$1"
-
-    if ! is_bitcoin_running "$username"; then
-        log_echo "✓ No bitcoin daemon running for $username"
-        return 0
-    fi
-
-    local home_dir="/home/$username"
-    if sudo -u "$username" test -f "$home_dir/halt-bitcoin"; then
-        sudo su - "$username" -c "./halt-bitcoin" || true
-        log_echo "✓ Bitcoin daemon stopped"
-    else
-        log_echo "⚠ halt-bitcoin script not found, attempting direct process termination"
-        if sudo su - "$username" -c "bitcoin-cli -conf=$home_dir/bitcoin.conf stop" 2>/dev/null; then
-            log_echo "✓ Bitcoin daemon stopped via RPC"
-        elif sudo su - "$username" -c "pkill -f '^bitcoind -conf'" 2>/dev/null; then
-            log_echo "✓ Bitcoin daemon process terminated"
-        else
-            log_echo "✓ No bitcoin daemon process found"
-        fi
-    fi
-}
-
-# Idempotent bitcoin operator removal
-clobber_bitcoin_operator() {
-    local username="$1"
-
-    if id "$username" &>/dev/null; then
-        # Stop bitcoin daemon if running
-        stop_bitcoin "$username"
-
-        # Remove bitcoin-specific files before generic user removal
-        sudo -u "$username" rm -rf \
-            "/home/$username/data" \
-            "/home/$username/logs/bitcoin.log" \
-            "/home/$username/run-bitcoin" \
-            "/home/$username/halt-bitcoin" \
-            "/home/$username/bitcoin.conf" 2>/dev/null || true
-        log_echo "✓ Removed bitcoin operator files for: $username"
-
-        # Remove logrotate configuration
-        if [[ -f "/etc/logrotate.d/bitcoin-$username" ]]; then
-            sudo rm "/etc/logrotate.d/bitcoin-$username"
-            log_echo "✓ Removed logrotate config for $username"
-        fi
-
-        # Use generic user removal
-        clobber_user "$username"
-    fi
-}
 
 # Generate bitcoin configuration
 generate_bitcoin_config() {
@@ -138,7 +66,7 @@ generate_bitcoin_config() {
     local rpc_password="${BITCOIN_RPC_PASSWORD:-}"
 
     if [[ -z "$rpc_password" ]]; then
-        log_echo "ERROR: BITCOIN_RPC_PASSWORD must be set"
+        log_error "BITCOIN_RPC_PASSWORD must be set"
         return 1
     fi
 
@@ -171,110 +99,6 @@ rpcuser=$rpc_user
 rpcpassword=$rpc_password
 port=$p2p_port
 EOF
-}
-
-# Idempotent bitcoin operator initialization (one-time setup)
-init_bitcoin_operator() {
-    local username="$1"
-    local network_mode="$2"
-    local home_dir="/home/$username"
-
-    # Create user and directories (idempotent)
-    create_user "$username"
-    sudo -u "$username" mkdir -p "$home_dir"/{data,logs}
-
-    # Generate configuration
-    log_echo "Generating bitcoin configuration..."
-    generate_bitcoin_config "$username" "$network_mode" | sudo tee "$home_dir/bitcoin.conf" >/dev/null
-    sudo chown "$username:$username" "$home_dir/bitcoin.conf"
-    sudo chmod 600 "$home_dir/bitcoin.conf"
-
-    # Update scripts and configuration
-    update_bitcoin_operator "$username"
-
-    # Enable log rotation
-    ensure_logrotate_enabled "$username" "bitcoin"
-
-    # Configure P2P firewall rules if enabled
-    ensure_bitcoin_p2p_enabled "$username" "$network_mode"
-
-    # Apply Bitcoin Knots banlist if enabled
-    apply_knots_banlist "$username"
-}
-
-# Update bitcoin operator configuration (assumes init_bitcoin_operator was run)
-update_bitcoin_operator() {
-    local username="$1"
-    local home_dir="/home/$username"
-
-    log_echo "Updating bitcoin operator configuration for $username..."
-
-    # Deploy run-bitcoin script
-    sudo tee "$home_dir/run-bitcoin" >/dev/null <<'EOF'
-#!/bin/bash
-set -euo pipefail
-
-# Ensure we're running from the user's home directory
-cd "$HOME"
-
-# Configuration
-CONFIG_FILE="$HOME/bitcoin.conf"
-LOG_FILE="$HOME/logs/bitcoin.log"
-
-# Function to log and echo
-log_echo() {
-    echo "run-bitcoin: $@" | tee -a "$LOG_FILE"
-}
-
-# Verify environment is set up correctly
-if [[ ! -f "$CONFIG_FILE" ]]; then
-    log_echo "ERROR: Configuration file $CONFIG_FILE does not exist. Run bitcoin-init first."
-    exit 1
-fi
-
-if [[ ! -d "$HOME/logs" ]]; then
-    log_echo "ERROR: Logs directory $HOME/logs does not exist. Run bitcoin-init first."
-    exit 1
-fi
-
-# Log startup
-log_echo "$(date): Starting Bitcoin Core daemon..."
-log_echo "Using configuration: $CONFIG_FILE"
-
-# Start bitcoind with config file
-exec bitcoind -conf="$CONFIG_FILE" "$@" >> "$LOG_FILE" 2>&1
-EOF
-
-    # Deploy halt-bitcoin script
-    sudo tee "$home_dir/halt-bitcoin" >/dev/null <<'EOF'
-#!/bin/bash
-set -euo pipefail
-
-# Function to log and echo
-log_echo() {
-    echo "halt-bitcoin: $@" | tee -a "$HOME/logs/bitcoin.log"
-}
-
-log_echo "$(date): Stopping Bitcoin Core daemon..."
-
-# Try graceful shutdown via RPC first
-if bitcoin-cli -conf="$HOME/bitcoin.conf" stop 2>/dev/null; then
-    log_echo "✓ Bitcoin daemon stopped gracefully via RPC"
-else
-    # Fall back to signal-based termination
-    if pkill -SIGTERM -f "^bitcoind -conf" 2>/dev/null; then
-        log_echo "✓ Bitcoin daemon stopped via SIGTERM"
-    else
-        log_echo "✓ No bitcoin daemon process found"
-    fi
-fi
-EOF
-
-    # Set permissions
-    sudo chmod +x "$home_dir/run-bitcoin" "$home_dir/halt-bitcoin"
-    sudo chown "$username:$username" "$home_dir/run-bitcoin" "$home_dir/halt-bitcoin"
-
-    log_echo "✓ Updated bitcoin operator configuration for $username"
 }
 
 # Configure Bitcoin P2P firewall rules (similar to ensure_gossip_enabled for validators)

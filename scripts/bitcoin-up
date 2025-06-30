@@ -1,141 +1,174 @@
 #!/bin/bash
 #
-# bitcoin-up - Start Bitcoin Core daemon
+# bitcoin-up - Bitcoin Core IaC Management
 #
-# Ensures Bitcoin Core daemon is running and healthy:
-# - Starts bitcoin daemon if not already running
-# - Verifies bitcoin daemon health and RPC connectivity
-# - Reports status and provides monitoring guidance
+# Ensures Bitcoin Core infrastructure exists and service is running.
+# This is an Infrastructure as Code (IaC) tool - it declares desired state
+# and ensures reality matches that state.
 #
 # Usage:
-#   # Environment variable (recommended):
 #   BITCOIN_USER=testnet-bitcoin bitcoin-up
-#
-#   # Or traditional flag (backward compatibility):
 #   bitcoin-up --user testnet-bitcoin
 #
-# What it does:
-# - Checks if bitcoin daemon process is already running
-# - Starts bitcoin daemon process if needed
-# - Waits for startup and verifies health
-# - Reports final status
-#
-# Dependencies: Run 'bitcoin-init' first for complete setup
-#
 set -euo pipefail
+source "$(dirname "$0")/lib.sh"
 source "$(dirname "$0")/bitcoin-lib.sh"
 
 log_echo() {
     echo "bitcoin-up: $@"
 }
 
-# Initialize from environment variable (can be overridden by flag)
-BITCOIN_USER="${BITCOIN_USER:-}"
+# Declare desired state
+declare_bitcoin_state() {
+    # Initialize from environment variables (no defaults - envrc handles those)
+    BITCOIN_USER="${BITCOIN_USER:-}"
+    BITCOIN_NETWORK_MODE="${BITCOIN_NETWORK_MODE:-}"
 
-# Parse command line arguments (override environment variable)
-while [[ $# -gt 0 ]]; do
-    case $1 in
-    --user)
-        BITCOIN_USER="$2"
-        shift 2
-        ;;
-    -h | --help)
-        echo "Usage: bitcoin-up [options]"
-        echo ""
-        echo "Environment Variable (recommended):"
-        echo "  BITCOIN_USER                     Bitcoin user to start"
-        echo ""
-        echo "Options (override environment variable):"
-        echo "  --user <username>                Bitcoin user to start"
-        echo "  -h, --help                       Show this help"
-        echo ""
-        echo "Examples:"
-        echo "  # Using environment variable (recommended):"
-        echo "  BITCOIN_USER=testnet-bitcoin bitcoin-up"
-        echo ""
-        echo "  # Using flag (backward compatibility):"
-        echo "  bitcoin-up --user testnet-bitcoin"
-        exit 0
-        ;;
-    *)
-        echo "bitcoin-up: Unknown option: $1"
-        echo "bitcoin-up: Use --help for usage information"
-        exit 1
-        ;;
-    esac
-done
-
-# Validate arguments
-if [[ -z "$BITCOIN_USER" ]]; then
-    log_echo "ERROR: BITCOIN_USER environment variable or --user flag is required"
-    echo "Usage: BITCOIN_USER=testnet-bitcoin bitcoin-up"
-    echo "   or: bitcoin-up --user testnet-bitcoin"
-    exit 1
-fi
-
-# Check prerequisites
-if ! id "$BITCOIN_USER" &>/dev/null; then
-    log_echo "✗ User '$BITCOIN_USER' not found. Run: bitcoin-init first"
-    exit 1
-fi
-
-if ! sudo -u "$BITCOIN_USER" test -f "/home/$BITCOIN_USER/run-bitcoin"; then
-    log_echo "✗ Not initialized. Run: bitcoin-init first"
-    exit 1
-fi
-
-# Check if already running
-if is_bitcoin_running "$BITCOIN_USER"; then
-    log_echo "✓ Bitcoin daemon already running for $BITCOIN_USER"
-
-    # Test RPC connectivity
-    home_dir="/home/$BITCOIN_USER"
-    if sudo -u "$BITCOIN_USER" bitcoin-cli -conf="$home_dir/bitcoin.conf" getblockchaininfo >/dev/null 2>&1; then
-        log_echo "✓ RPC connectivity verified"
-    else
-        log_echo "⚠ Bitcoin daemon running but RPC not ready yet"
-    fi
-    exit 0
-fi
-
-# Update configuration and start bitcoin daemon
-update_bitcoin_operator "$BITCOIN_USER"
-sudo su - "$BITCOIN_USER" -c "nohup ./run-bitcoin > /dev/null 2>&1 &"
-log_echo "✓ Bitcoin daemon started"
-
-# Wait a moment for startup
-sleep 3
-
-# Verify it started successfully
-if is_bitcoin_running "$BITCOIN_USER"; then
-    log_echo "✓ Bitcoin daemon is running"
-
-    # Wait for RPC to become available (with timeout)
-    countdown=30
-    home_dir="/home/$BITCOIN_USER"
-
-    log_echo "Waiting for RPC to become available..."
-    while [[ $countdown -gt 0 ]]; do
-        if sudo -u "$BITCOIN_USER" bitcoin-cli -conf="$home_dir/bitcoin.conf" getblockchaininfo >/dev/null 2>&1; then
-            log_echo "✓ RPC connectivity verified"
-
-            # Show basic status
-            blockcount=$(sudo -u "$BITCOIN_USER" bitcoin-cli -conf="$home_dir/bitcoin.conf" getblockcount 2>/dev/null || echo "unknown")
-            chainname=$(sudo -u "$BITCOIN_USER" bitcoin-cli -conf="$home_dir/bitcoin.conf" getblockchaininfo 2>/dev/null | jq -r '.chain' 2>/dev/null || echo "unknown")
-
-            log_echo "✓ Network: $chainname, Block count: $blockcount"
-            log_echo "✓ Bitcoin daemon is healthy and ready"
+    # Parse command line arguments (override environment variables)
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+        --user)
+            BITCOIN_USER="$2"
+            shift 2
+            ;;
+        --network)
+            BITCOIN_NETWORK_MODE="$2"
+            shift 2
+            ;;
+        -h | --help)
+            echo "Usage: bitcoin-up [options]"
+            echo ""
+            echo "Environment Variables (recommended):"
+            echo "  BITCOIN_USER                     Bitcoin user account"
+            echo "  BITCOIN_NETWORK_MODE             Network (testnet|mainnet|regtest|signet)"
+            echo ""
+            echo "Options (override environment variables):"
+            echo "  --user <username>                Bitcoin user account"
+            echo "  --network <network>              Network mode"
+            echo "  -h, --help                       Show this help"
             exit 0
-        fi
-
-        sleep 1
-        ((countdown--))
+            ;;
+        *)
+            log_error "Unknown option: $1"
+            exit 1
+            ;;
+        esac
     done
 
-    log_echo "⚠ Bitcoin daemon started but RPC not yet available (may still be starting up)"
-    log_echo "  Check logs: tail -f /home/$BITCOIN_USER/logs/bitcoin.log"
-else
-    log_echo "✗ Failed to start bitcoin daemon"
-    log_echo "  Check logs: tail -f /home/$BITCOIN_USER/logs/bitcoin.log"
-    exit 1
-fi
+    # Validate required parameters
+    if [[ -z "$BITCOIN_USER" ]]; then
+        log_error "BITCOIN_USER environment variable or --user flag is required"
+        echo "Usage: BITCOIN_USER=testnet-bitcoin bitcoin-up"
+        echo "   or: bitcoin-up --user testnet-bitcoin"
+        exit 1
+    fi
+
+    if [[ -z "$BITCOIN_NETWORK_MODE" ]]; then
+        log_error "BITCOIN_NETWORK_MODE environment variable or --network flag is required"
+        echo "Set in envrc or pass --network (testnet|mainnet|regtest|signet)"
+        exit 1
+    fi
+
+    log_echo "Desired state: user=$BITCOIN_USER, network=$BITCOIN_NETWORK_MODE"
+}
+
+# Ensure all infrastructure exists and is current
+ensure_bitcoin_infrastructure() {
+    log_echo "Ensuring Bitcoin infrastructure exists and is current..."
+
+    # Core infrastructure
+    create_user "$BITCOIN_USER"
+    ensure_service_directories "$BITCOIN_USER" "data" "logs"
+
+    # Service management
+    ensure_systemd_service_unit_installed "arch-bitcoind@"
+
+    # Configuration (reuse existing function)
+    ensure_bitcoin_configuration_current "$BITCOIN_USER" "$BITCOIN_NETWORK_MODE"
+
+    # Operational concerns
+    ensure_logrotate_enabled "$BITCOIN_USER" "bitcoin"
+    ensure_bitcoin_p2p_enabled "$BITCOIN_USER" "$BITCOIN_NETWORK_MODE"
+    apply_knots_banlist "$BITCOIN_USER"
+
+    log_echo "✓ Bitcoin infrastructure is current"
+}
+
+# Ensure configuration file is current
+ensure_bitcoin_configuration_current() {
+    local username="$1"
+    local network_mode="$2"
+    local config_file="/home/$username/bitcoin.conf"
+
+    # Generate current config and compare
+    local temp_config=$(mktemp)
+    trap "rm -f '$temp_config'" EXIT
+
+    generate_bitcoin_config "$username" "$network_mode" >"$temp_config"
+
+    # Update if different or missing
+    if [[ ! -f "$config_file" ]] || ! cmp -s "$temp_config" "$config_file" 2>/dev/null; then
+        log_echo "Updating Bitcoin configuration..."
+        sudo cp "$temp_config" "$config_file"
+        sudo chown "$username:$username" "$config_file"
+        sudo chmod 600 "$config_file"
+        log_echo "✓ Bitcoin configuration updated"
+    fi
+}
+
+# Ensure service is running and healthy
+ensure_service_running() {
+    local service_name="arch-bitcoind@$BITCOIN_USER"
+
+    # Start service if not running
+    if ! is_systemd_service_running "$service_name"; then
+        log_echo "Starting Bitcoin service..."
+        sudo systemctl start "$service_name"
+        log_echo "✓ Bitcoin service started"
+    else
+        log_echo "✓ Bitcoin service already running"
+    fi
+
+    # Wait for RPC to be ready
+    local rpc_check="sudo -u $BITCOIN_USER bitcoin-cli -conf=/home/$BITCOIN_USER/bitcoin.conf getblockchaininfo"
+    wait_for_service_ready "$service_name" "$rpc_check" 30
+
+    # Verify health
+    verify_bitcoin_healthy "$BITCOIN_USER"
+}
+
+# Verify service is healthy and report status
+verify_bitcoin_healthy() {
+    local username="$1"
+    local config_file="/home/$username/bitcoin.conf"
+
+    log_echo "Verifying Bitcoin service health..."
+
+    # Get blockchain info for verification
+    if ! sudo -u "$username" bitcoin-cli -conf="$config_file" getblockchaininfo >/dev/null 2>&1; then
+        log_error "✗ Bitcoin RPC not responding"
+        return 1
+    fi
+
+    # Show basic status
+    local blockcount=$(sudo -u "$username" bitcoin-cli -conf="$config_file" getblockcount 2>/dev/null || echo "unknown")
+    local chainname=$(sudo -u "$username" bitcoin-cli -conf="$config_file" getblockchaininfo 2>/dev/null | jq -r '.chain' 2>/dev/null || echo "unknown")
+
+    log_echo "✓ Bitcoin service is healthy"
+    log_echo "  Network: $chainname"
+    log_echo "  Block count: $blockcount"
+    log_echo "  Status: systemctl status arch-bitcoind@$username"
+    log_echo "  Logs: journalctl -u arch-bitcoind@$username -f"
+}
+
+# Main execution: IaC pattern
+main() {
+    declare_bitcoin_state "$@"
+    ensure_bitcoin_infrastructure
+    ensure_service_running
+
+    log_echo "✓ Bitcoin Core infrastructure is ready and running"
+}
+
+# Execute main function with all arguments
+main "$@"

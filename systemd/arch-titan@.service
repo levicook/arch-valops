@@ -1,0 +1,55 @@
+[Unit]
+Description=Titan Rune Indexer (%i)
+Documentation=https://github.com/SaturnBTC/Titan
+After=network.target
+
+[Service]
+Type=simple
+User=%i
+Group=%i
+WorkingDirectory=/home/%i
+
+# Environment file with runtime configuration
+EnvironmentFile=/home/%i/titan.env
+
+# Direct binary execution with command line arguments
+ExecStart=/usr/local/bin/titan \
+    --bitcoin-rpc-username ${BITCOIN_RPC_USER} \
+    --bitcoin-rpc-password ${BITCOIN_RPC_PASSWORD} \
+    --chain ${TITAN_NETWORK_MODE} \
+    --data-dir /home/%i/data \
+    --http-listen 0.0.0.0:3030 \
+    --enable-file-logging \
+    --bitcoin-rpc-limit 12 \
+    --bitcoin-rpc-pool-size 500 \
+    --commit-interval 500 \
+    --main-loop-interval 500 \
+    --enable-zmq-listener \
+    --index-bitcoin-transactions
+
+# Automatic restart on failure
+Restart=always
+RestartSec=10
+StartLimitInterval=0
+
+# Logging
+StandardOutput=append:/home/%i/logs/titan.log
+StandardError=append:/home/%i/logs/titan.log
+
+# Resource limits
+LimitNOFILE=65536
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/%i
+# ProtectHome=tmpfs  # Conflicts with ReadWritePaths - disabled for now
+
+# Process management
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

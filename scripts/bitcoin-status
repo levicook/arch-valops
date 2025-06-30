@@ -114,42 +114,42 @@ if is_bitcoin_running "$BITCOIN_USER"; then
 
             # Verify network matches configuration
             case "$INTENDED_NETWORK" in
-                mainnet|main)
-                    if [[ "$CHAIN" == "main" ]]; then
-                        echo "✓ Network: Configuration matches actual"
-                    else
-                        echo "⚠ Network: Mismatch! Expected mainnet, running $CHAIN"
-                    fi
-                    ;;
-                testnet)
-                    if [[ "$CHAIN" == "test" ]]; then
-                        echo "✓ Network: Configuration matches actual"
-                    else
-                        echo "⚠ Network: Mismatch! Expected testnet, running $CHAIN"
-                    fi
-                    ;;
-                regtest)
-                    if [[ "$CHAIN" == "regtest" ]]; then
-                        echo "✓ Network: Configuration matches actual"
-                    else
-                        echo "⚠ Network: Mismatch! Expected regtest, running $CHAIN"
-                    fi
-                    ;;
-                *)
-                    echo "⚠ Network: Cannot verify (unknown expected network)"
-                    ;;
+            mainnet | main)
+                if [[ "$CHAIN" == "main" ]]; then
+                    echo "✓ Network: Configuration matches actual"
+                else
+                    echo "⚠ Network: Mismatch! Expected mainnet, running $CHAIN"
+                fi
+                ;;
+            testnet)
+                if [[ "$CHAIN" == "test" ]]; then
+                    echo "✓ Network: Configuration matches actual"
+                else
+                    echo "⚠ Network: Mismatch! Expected testnet, running $CHAIN"
+                fi
+                ;;
+            regtest)
+                if [[ "$CHAIN" == "regtest" ]]; then
+                    echo "✓ Network: Configuration matches actual"
+                else
+                    echo "⚠ Network: Mismatch! Expected regtest, running $CHAIN"
+                fi
+                ;;
+            *)
+                echo "⚠ Network: Cannot verify (unknown expected network)"
+                ;;
             esac
 
             # Show sync status
             if command -v bc >/dev/null 2>&1; then
-                if (( $(echo "$VERIFICATION_PROGRESS > 0.999" | bc -l) )); then
+                if (($(echo "$VERIFICATION_PROGRESS > 0.999" | bc -l))); then
                     echo "✓ Sync: Fully synchronized"
                 else
                     # Convert to percentage, handling very small numbers
                     SYNC_PERCENT=$(echo "scale=2; $VERIFICATION_PROGRESS * 100" | bc -l)
 
                     # Convert scientific notation and handle very small percentages
-                    if (( $(echo "$SYNC_PERCENT < 0.01" | bc -l) )); then
+                    if (($(echo "$SYNC_PERCENT < 0.01" | bc -l))); then
                         echo "⏳ Sync: Starting (< 0.01%)"
                     else
                         # Round to integer for display
@@ -189,12 +189,12 @@ if is_bitcoin_running "$BITCOIN_USER"; then
 
             # Determine expected p2p port based on network
             case "$INTENDED_NETWORK" in
-                testnet) P2P_PORT="18333" ;;
-                testnet4) P2P_PORT="48333" ;;
-                signet) P2P_PORT="38333" ;;
-                regtest) P2P_PORT="18444" ;;
-                devnet) P2P_PORT="18444" ;;
-                *) P2P_PORT="8333" ;;
+            testnet) P2P_PORT="18333" ;;
+            testnet4) P2P_PORT="48333" ;;
+            signet) P2P_PORT="38333" ;;
+            regtest) P2P_PORT="18444" ;;
+            devnet) P2P_PORT="18444" ;;
+            *) P2P_PORT="8333" ;;
             esac
 
             # Check if listening
