@@ -1,5 +1,6 @@
 # User-specific environment customizations
 .env
+.env.passwords
 
 # Age encrypted identity files (should be managed separately)
 *.age

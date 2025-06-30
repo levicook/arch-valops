@@ -1,0 +1,240 @@
+#!/bin/bash
+#
+# bitcoin-status - Quick Bitcoin operator status check
+#
+# Shows current status of Bitcoin operator:
+# - User existence and configuration
+# - Process status
+# - Network connectivity and sync status
+# - RPC connectivity
+#
+# Usage:
+#   # Environment variable (recommended):
+#   BITCOIN_USER=testnet-bitcoin bitcoin-status
+#
+#   # Or traditional flag (backward compatibility):
+#   bitcoin-status --user testnet-bitcoin
+#
+set -euo pipefail
+source "$(dirname "$0")/bitcoin-lib.sh"
+
+# Initialize from environment variable (can be overridden by flag)
+BITCOIN_USER="${BITCOIN_USER:-}"
+
+# Parse command line arguments (override environment variable)
+while [[ $# -gt 0 ]]; do
+    case $1 in
+    --user)
+        BITCOIN_USER="$2"
+        shift 2
+        ;;
+    -h | --help)
+        echo "Usage: bitcoin-status [options]"
+        echo ""
+        echo "Environment Variable (recommended):"
+        echo "  BITCOIN_USER                     Bitcoin user to check"
+        echo ""
+        echo "Options (override environment variable):"
+        echo "  --user <username>                Bitcoin user to check"
+        echo "  -h, --help                       Show this help"
+        echo ""
+        echo "Examples:"
+        echo "  # Using environment variable (recommended):"
+        echo "  BITCOIN_USER=testnet-bitcoin bitcoin-status"
+        echo ""
+        echo "  # Using flag (backward compatibility):"
+        echo "  bitcoin-status --user testnet-bitcoin"
+        exit 0
+        ;;
+    *)
+        echo "bitcoin-status: Unknown option: $1"
+        echo "bitcoin-status: Use --help for usage information"
+        exit 1
+        ;;
+    esac
+done
+
+# Validate arguments
+if [[ -z "$BITCOIN_USER" ]]; then
+    echo "bitcoin-status: ERROR: BITCOIN_USER environment variable or --user flag is required"
+    echo "Usage: BITCOIN_USER=testnet-bitcoin bitcoin-status"
+    echo "   or: bitcoin-status --user testnet-bitcoin"
+    exit 1
+fi
+
+echo "🔍 Bitcoin Status: $BITCOIN_USER"
+echo "═══════════════════════════════════"
+
+# Check user existence
+if id "$BITCOIN_USER" &>/dev/null; then
+    echo "✓ User: $BITCOIN_USER exists"
+    USER_HOME=$(eval echo "~$BITCOIN_USER")
+    CONFIG_FILE="$USER_HOME/bitcoin.conf"
+
+    if sudo test -f "$CONFIG_FILE"; then
+        echo "✓ Config: $CONFIG_FILE found"
+    else
+        echo "✗ Config: $CONFIG_FILE not found"
+    fi
+else
+    echo "✗ User: $BITCOIN_USER does not exist"
+    echo "💡 Run: bitcoin-init to create"
+    exit 1
+fi
+
+# Show intended network from environment
+INTENDED_NETWORK="${BITCOIN_NETWORK_MODE:-unknown}"
+echo "✓ Network: $INTENDED_NETWORK (configured)"
+
+# Check process status
+if is_bitcoin_running "$BITCOIN_USER"; then
+    echo "✓ Process: bitcoind running"
+
+    # Get process info
+    BITCOIN_PID=$(pgrep -f "^bitcoind -conf.*$BITCOIN_USER" | head -1)
+    if [[ -n "$BITCOIN_PID" ]]; then
+        echo "  PID: $BITCOIN_PID"
+    fi
+
+    # Check RPC connectivity and get info
+    if [[ -n "${BITCOIN_RPC_USER:-}" ]] && [[ -n "${BITCOIN_RPC_PASSWORD:-}" ]]; then
+        echo "✓ RPC: Credentials available"
+
+        # Try RPC calls
+        if BLOCKCHAIN_INFO=$(bitcoin-cli -rpcuser="$BITCOIN_RPC_USER" -rpcpassword="$BITCOIN_RPC_PASSWORD" getblockchaininfo 2>/dev/null); then
+            echo "✓ RPC: Connectivity verified"
+
+            # Extract key info
+            BLOCKS=$(echo "$BLOCKCHAIN_INFO" | jq -r '.blocks // "unknown"')
+            CHAIN=$(echo "$BLOCKCHAIN_INFO" | jq -r '.chain // "unknown"')
+            VERIFICATION_PROGRESS=$(echo "$BLOCKCHAIN_INFO" | jq -r '.verificationprogress // 0')
+
+            echo "  Chain: $CHAIN (actual)"
+            echo "  Blocks: $BLOCKS"
+
+            # Verify network matches configuration
+            case "$INTENDED_NETWORK" in
+                mainnet|main)
+                    if [[ "$CHAIN" == "main" ]]; then
+                        echo "✓ Network: Configuration matches actual"
+                    else
+                        echo "⚠ Network: Mismatch! Expected mainnet, running $CHAIN"
+                    fi
+                    ;;
+                testnet)
+                    if [[ "$CHAIN" == "test" ]]; then
+                        echo "✓ Network: Configuration matches actual"
+                    else
+                        echo "⚠ Network: Mismatch! Expected testnet, running $CHAIN"
+                    fi
+                    ;;
+                regtest)
+                    if [[ "$CHAIN" == "regtest" ]]; then
+                        echo "✓ Network: Configuration matches actual"
+                    else
+                        echo "⚠ Network: Mismatch! Expected regtest, running $CHAIN"
+                    fi
+                    ;;
+                *)
+                    echo "⚠ Network: Cannot verify (unknown expected network)"
+                    ;;
+            esac
+
+            # Show sync status
+            if command -v bc >/dev/null 2>&1; then
+                if (( $(echo "$VERIFICATION_PROGRESS > 0.999" | bc -l) )); then
+                    echo "✓ Sync: Fully synchronized"
+                else
+                    # Convert to percentage, handling very small numbers
+                    SYNC_PERCENT=$(echo "scale=2; $VERIFICATION_PROGRESS * 100" | bc -l)
+
+                    # Convert scientific notation and handle very small percentages
+                    if (( $(echo "$SYNC_PERCENT < 0.01" | bc -l) )); then
+                        echo "⏳ Sync: Starting (< 0.01%)"
+                    else
+                        # Round to integer for display
+                        SYNC_PERCENT_INT=$(echo "scale=0; $SYNC_PERCENT / 1" | bc -l)
+                        if [[ "$SYNC_PERCENT_INT" -eq 0 ]]; then
+                            echo "⏳ Sync: < 1% complete"
+                        else
+                            echo "⏳ Sync: ${SYNC_PERCENT_INT}% complete"
+                        fi
+                    fi
+                fi
+            else
+                # Fallback without bc
+                if [[ "$VERIFICATION_PROGRESS" == "1" ]] || [[ "$VERIFICATION_PROGRESS" == "1.0" ]]; then
+                    echo "✓ Sync: Fully synchronized"
+                else
+                    echo "⏳ Sync: In progress"
+                fi
+            fi
+
+            # Get detailed peer breakdown
+            if PEER_INFO=$(bitcoin-cli -rpcuser="$BITCOIN_RPC_USER" -rpcpassword="$BITCOIN_RPC_PASSWORD" getpeerinfo 2>/dev/null); then
+                TOTAL_PEERS=$(echo "$PEER_INFO" | jq 'length')
+                INBOUND_PEERS=$(echo "$PEER_INFO" | jq '[.[] | select(.inbound == true)] | length')
+                OUTBOUND_PEERS=$(echo "$PEER_INFO" | jq '[.[] | select(.inbound == false)] | length')
+                FULL_RELAY=$(echo "$PEER_INFO" | jq '[.[] | select(.connection_type == "outbound-full-relay")] | length')
+                BLOCK_RELAY=$(echo "$PEER_INFO" | jq '[.[] | select(.connection_type == "block-relay-only")] | length')
+
+                echo "  Connections: $TOTAL_PEERS peers total"
+                echo "    Inbound: $INBOUND_PEERS, Outbound: $OUTBOUND_PEERS"
+                echo "    Full-relay: $FULL_RELAY, Block-only: $BLOCK_RELAY"
+            fi
+
+            # Check listening status and firewall
+            echo ""
+            echo "🌐 Network Topology:"
+
+            # Determine expected p2p port based on network
+            case "$INTENDED_NETWORK" in
+                testnet) P2P_PORT="18333" ;;
+                testnet4) P2P_PORT="48333" ;;
+                signet) P2P_PORT="38333" ;;
+                regtest) P2P_PORT="18444" ;;
+                devnet) P2P_PORT="18444" ;;
+                *) P2P_PORT="8333" ;;
+            esac
+
+            # Check if listening
+            if sudo ss -tlnp | grep ":$P2P_PORT " >/dev/null 2>&1; then
+                echo "✓ Listening: Port $P2P_PORT accepting connections"
+            else
+                echo "✗ Listening: Port $P2P_PORT not bound"
+            fi
+
+            # Check firewall status for p2p port
+            if command -v ufw >/dev/null 2>&1; then
+                UFW_STATUS=$(sudo ufw status 2>/dev/null | grep "$P2P_PORT" || echo "")
+                if [[ -n "$UFW_STATUS" ]]; then
+                    echo "✓ Firewall: Port $P2P_PORT explicitly allowed"
+                    echo "  → Can accept inbound peer connections"
+                else
+                    UFW_DEFAULT=$(sudo ufw status verbose 2>/dev/null | grep "Default:" | grep "deny (incoming)" || echo "")
+                    if [[ -n "$UFW_DEFAULT" ]]; then
+                        echo "⚠ Firewall: Port $P2P_PORT blocked by default policy"
+                        echo "  → Outbound-only operation (secure for validators)"
+                    else
+                        echo "? Firewall: Status unclear"
+                    fi
+                fi
+            else
+                echo "? Firewall: UFW not available"
+            fi
+
+        else
+            echo "✗ RPC: Connection failed"
+            echo "  Check bitcoin.conf RPC settings"
+        fi
+    else
+        echo "⚠ RPC: No credentials in environment"
+        echo "  Set BITCOIN_RPC_USER and BITCOIN_RPC_PASSWORD"
+    fi
+
+else
+    echo "✗ Process: bitcoind not running"
+    echo "💡 Run: bitcoin-up to start"
+fi
+
+echo "═══════════════════════════════════"

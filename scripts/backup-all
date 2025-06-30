@@ -1,0 +1,115 @@
+#!/bin/bash
+#
+# backup-all - Create encrypted backups of validator identities and passwords
+#
+# Runs both backup-identities and backup-passwords for complete environment backup.
+# This is the recommended way to backup everything needed for validator migration.
+#
+# Usage:
+#   # Environment variable (recommended):
+#   VALIDATOR_USER=testnet-validator backup-all
+#
+#   # Or traditional flag (backward compatibility):
+#   backup-all --user testnet-validator
+#
+# What it does:
+# - Backs up ALL validator identities for the specified user
+# - Backs up ALL password files from all validator environments
+# - Creates complete encrypted backup set for server migration
+#
+set -euo pipefail
+
+log_echo() {
+    echo "backup-all: $@"
+}
+
+usage() {
+    echo "Usage: backup-all [options]"
+    echo ""
+    echo "Environment Variable (recommended):"
+    echo "  VALIDATOR_USER                   Validator user to backup identities for"
+    echo ""
+    echo "Options (override environment variable):"
+    echo "  --user <username>                Validator user to backup identities for"
+    echo "  -h, --help                       Show this help"
+    echo ""
+    echo "Examples:"
+    echo "  # Using environment variable (recommended):"
+    echo "  VALIDATOR_USER=testnet-validator backup-all"
+    echo ""
+    echo "  # Using flag (backward compatibility):"
+    echo "  backup-all --user testnet-validator"
+    echo ""
+    echo "This creates a complete backup set for validator migration:"
+    echo "  - All validator identities for specified user"
+    echo "  - All password files from all environments"
+    echo "  - Everything needed to restore on a new server"
+}
+
+# Initialize from environment variable (can be overridden by flag)
+VALIDATOR_USER="${VALIDATOR_USER:-}"
+
+# Parse command line arguments (override environment variable)
+while [[ $# -gt 0 ]]; do
+    case $1 in
+    --user)
+        VALIDATOR_USER="$2"
+        shift 2
+        ;;
+    -h | --help)
+        usage
+        exit 0
+        ;;
+    *)
+        echo "backup-all: Unknown option: $1"
+        echo "backup-all: Use --help for usage information"
+        exit 1
+        ;;
+    esac
+done
+
+# Validate arguments - user is required
+if [[ -z "$VALIDATOR_USER" ]]; then
+    log_echo "ERROR: VALIDATOR_USER environment variable or --user flag is required"
+    echo "Usage: VALIDATOR_USER=testnet-validator backup-all"
+    echo "   or: backup-all --user testnet-validator"
+    exit 1
+fi
+
+SCRIPT_DIR="$(dirname "$0")"
+
+log_echo "Starting complete backup for validator user: $VALIDATOR_USER"
+log_echo ""
+
+# Backup validator identities
+log_echo "=== Backing up validator identities ==="
+if VALIDATOR_USER="$VALIDATOR_USER" "$SCRIPT_DIR/backup-identities"; then
+    log_echo "✓ Identity backup completed successfully"
+else
+    log_echo "✗ Identity backup failed"
+    exit 1
+fi
+
+log_echo ""
+
+# Backup passwords
+log_echo "=== Backing up password files ==="
+if "$SCRIPT_DIR/backup-passwords"; then
+    log_echo "✓ Password backup completed successfully"
+else
+    log_echo "✗ Password backup failed"
+    exit 1
+fi
+
+log_echo ""
+log_echo "🎉 Complete backup finished successfully!"
+log_echo ""
+log_echo "📋 Backup summary:"
+log_echo "  Identity backups: ~/.valops/age/identity-backup-*.age"
+log_echo "  Password backups: ~/.valops/age/{devnet,mainnet,testnet}/.env.passwords.age"
+log_echo ""
+log_echo "🚀 To restore on new server:"
+log_echo "  1. Copy entire ~/.valops/age/ directory to new server"
+log_echo "  2. Run: VALIDATOR_USER=$VALIDATOR_USER validator-init --identity-backup <peer-id>"
+log_echo "  3. Run: restore-passwords"
+log_echo "  4. Ready to start services!"

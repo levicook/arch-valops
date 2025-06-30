@@ -1,0 +1,178 @@
+#!/bin/bash
+#
+# validator-status - Quick Arch validator status check
+#
+# Shows current status of Arch validator:
+# - User existence and configuration
+# - Process status
+# - Network connectivity and sync status
+# - Identity and peer information
+#
+# Usage:
+#   # Environment variable (recommended):
+#   VALIDATOR_USER=testnet-validator validator-status
+#
+#   # Or traditional flag (backward compatibility):
+#   validator-status --user testnet-validator
+#
+set -euo pipefail
+source "$(dirname "$0")/validator-lib.sh"
+
+# Initialize from environment variable (can be overridden by flag)
+VALIDATOR_USER="${VALIDATOR_USER:-}"
+
+# Parse command line arguments (override environment variable)
+while [[ $# -gt 0 ]]; do
+    case $1 in
+    --user)
+        VALIDATOR_USER="$2"
+        shift 2
+        ;;
+    -h | --help)
+        echo "Usage: validator-status [options]"
+        echo ""
+        echo "Environment Variable (recommended):"
+        echo "  VALIDATOR_USER                   Validator user to check"
+        echo ""
+        echo "Options (override environment variable):"
+        echo "  --user <username>                Validator user to check"
+        echo "  -h, --help                       Show this help"
+        echo ""
+        echo "Examples:"
+        echo "  # Using environment variable (recommended):"
+        echo "  VALIDATOR_USER=testnet-validator validator-status"
+        echo ""
+        echo "  # Using flag (backward compatibility):"
+        echo "  validator-status --user testnet-validator"
+        exit 0
+        ;;
+    *)
+        echo "validator-status: Unknown option: $1"
+        echo "validator-status: Use --help for usage information"
+        exit 1
+        ;;
+    esac
+done
+
+# Validate arguments
+if [[ -z "$VALIDATOR_USER" ]]; then
+    echo "validator-status: ERROR: VALIDATOR_USER environment variable or --user flag is required"
+    echo "Usage: VALIDATOR_USER=testnet-validator validator-status"
+    echo "   or: validator-status --user testnet-validator"
+    exit 1
+fi
+
+echo "🔍 Validator Status: $VALIDATOR_USER"
+echo "═══════════════════════════════════"
+
+# Check user existence
+if id "$VALIDATOR_USER" &>/dev/null; then
+    echo "✓ User: $VALIDATOR_USER exists"
+    USER_HOME=$(eval echo "~$VALIDATOR_USER")
+    DATA_DIR="$USER_HOME/data"
+
+    if [[ -d "$DATA_DIR" ]]; then
+        echo "✓ Data: $DATA_DIR found"
+
+        # Check for identity files
+        IDENTITY_COUNT=$(find "$DATA_DIR" -name "identity-secret" -type f 2>/dev/null | wc -l)
+        if [[ $IDENTITY_COUNT -gt 0 ]]; then
+            echo "✓ Identity: $IDENTITY_COUNT identity file(s) found"
+
+            # Try to extract peer ID from most recent identity
+            LATEST_IDENTITY=$(find "$DATA_DIR" -name "identity-secret" -type f -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -1 | cut -d' ' -f2-)
+            if [[ -n "$LATEST_IDENTITY" ]] && command -v validator >/dev/null 2>&1; then
+                if PEER_ID=$(validator --identity-file "$LATEST_IDENTITY" --show-peer-id 2>/dev/null); then
+                    echo "  Peer ID: $PEER_ID"
+                fi
+            fi
+        else
+            echo "⚠ Identity: No identity files found"
+        fi
+    else
+        echo "✗ Data: $DATA_DIR not found"
+    fi
+else
+    echo "✗ User: $VALIDATOR_USER does not exist"
+    echo "💡 Run: validator-init to create"
+    exit 1
+fi
+
+# Determine network from username
+if [[ "$VALIDATOR_USER" == *"testnet"* ]]; then
+    NETWORK="testnet"
+    RPC_PORT="${ARCH_RPC_BIND_PORT:-9944}"
+elif [[ "$VALIDATOR_USER" == *"mainnet"* ]]; then
+    NETWORK="mainnet"
+    RPC_PORT="${ARCH_RPC_BIND_PORT:-9944}"
+elif [[ "$VALIDATOR_USER" == *"devnet"* ]]; then
+    NETWORK="devnet"
+    RPC_PORT="${ARCH_RPC_BIND_PORT:-9944}"
+else
+    NETWORK="unknown"
+    RPC_PORT="9944"
+fi
+echo "✓ Network: $NETWORK"
+
+# Check process status
+if is_validator_running "$VALIDATOR_USER"; then
+    echo "✓ Process: validator running"
+
+    # Get process info
+    VALIDATOR_PID=$(pgrep -f "validator.*$VALIDATOR_USER" | head -1)
+    if [[ -n "$VALIDATOR_PID" ]]; then
+        echo "  PID: $VALIDATOR_PID"
+    fi
+
+    # Check RPC connectivity (if available)
+    if command -v curl >/dev/null 2>&1; then
+        echo "✓ RPC: Checking connectivity on port $RPC_PORT"
+
+        # Try a basic RPC health check
+        if curl -s -f "http://localhost:$RPC_PORT/health" >/dev/null 2>&1; then
+            echo "✓ RPC: Health endpoint responding"
+        elif curl -s -f "http://localhost:$RPC_PORT" >/dev/null 2>&1; then
+            echo "✓ RPC: Port $RPC_PORT responding"
+        else
+            echo "⚠ RPC: Port $RPC_PORT not responding"
+            echo "  This may be normal during startup"
+        fi
+
+        # Try getting node info if possible
+        if NODE_INFO=$(curl -s -X POST -H "Content-Type: application/json" \
+            -d '{"jsonrpc":"2.0","method":"system_name","params":[],"id":1}' \
+            "http://localhost:$RPC_PORT" 2>/dev/null); then
+
+            if echo "$NODE_INFO" | jq -e '.result' >/dev/null 2>&1; then
+                NODE_NAME=$(echo "$NODE_INFO" | jq -r '.result // "unknown"')
+                echo "  Node: $NODE_NAME"
+
+                # Get sync status
+                if SYNC_INFO=$(curl -s -X POST -H "Content-Type: application/json" \
+                    -d '{"jsonrpc":"2.0","method":"system_health","params":[],"id":1}' \
+                    "http://localhost:$RPC_PORT" 2>/dev/null); then
+
+                    if echo "$SYNC_INFO" | jq -e '.result' >/dev/null 2>&1; then
+                        IS_SYNCING=$(echo "$SYNC_INFO" | jq -r '.result.isSyncing // false')
+                        PEERS=$(echo "$SYNC_INFO" | jq -r '.result.peers // 0')
+
+                        if [[ "$IS_SYNCING" == "false" ]]; then
+                            echo "✓ Sync: Synchronized"
+                        else
+                            echo "⏳ Sync: In progress"
+                        fi
+                        echo "  Peers: $PEERS connected"
+                    fi
+                fi
+            fi
+        fi
+    else
+        echo "⚠ RPC: curl not available for connectivity check"
+    fi
+
+else
+    echo "✗ Process: validator not running"
+    echo "💡 Run: validator-up to start"
+fi
+
+echo "═══════════════════════════════════"

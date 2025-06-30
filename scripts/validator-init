@@ -121,6 +121,9 @@ init_validator_operator "$VALIDATOR_USER" "$ENCRYPTED_IDENTITY_KEY" "$NETWORK_MO
 # Create backup of all identities (compose with backup-identities script)
 VALIDATOR_USER="$VALIDATOR_USER" "$SCRIPT_ROOT/backup-identities"
 
+# Auto-backup after initialization
+$SCRIPT_ROOT/backup-all
+
 log_echo "✓ Initialized. Start with: validator-up"
 
 # Suggest cleanup of original file (if not a backup)

@@ -148,18 +148,18 @@ validator-down --clobber
 valops/
 ├── .envrc                            # Root environment (adds scripts/ to PATH)
 ├── scripts/                          # All executable scripts
-│   ├── lib.sh                        # Shared utilities library
-│   ├── check-env                     # Host security assessment tool
-│   ├── setup-age-keys                # Age encryption keypair setup
 │   ├── backup-identities             # Backup all validator identities
-│   ├── validator-init                # One-time validator initialization
-│   ├── validator-up                  # Start validator process
-│   ├── validator-down                # Stop validator process
+│   ├── lib.sh                        # Shared utilities library
+│   ├── setup-age-keys                # Age encryption keypair setup
+│   ├── sync-arch-bins                # Arch Network binary synchronization
+│   ├── sync-bitcoin-bins             # Bitcoin Core binary synchronization
+│   ├── sync-lib.sh                   # Shared sync utilities
+│   ├── sync-titan-bins               # Titan binary synchronization
+│   ├── system-status                 # Host security assessment tool
 │   ├── validator-dashboard           # Comprehensive monitoring dashboard
-│   ├── sync-arch-bins               # Arch Network binary synchronization
-│   ├── sync-bitcoin-bins            # Bitcoin Core binary synchronization
-│   ├── sync-titan-bins              # Titan binary synchronization
-│   └── sync-lib.sh                  # Shared sync utilities
+│   ├── validator-down                # Stop validator process
+│   ├── validator-init                # One-time validator initialization
+│   └── validator-up                  # Start validator process
 ├── validators/                       # Pre-configured environments
 │   ├── testnet/.envrc                # Testnet configuration
 │   ├── mainnet/.envrc                # Mainnet configuration

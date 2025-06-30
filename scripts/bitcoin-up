@@ -1,3 +1,141 @@
 #!/bin/bash
+#
+# bitcoin-up - Start Bitcoin Core daemon
+#
+# Ensures Bitcoin Core daemon is running and healthy:
+# - Starts bitcoin daemon if not already running
+# - Verifies bitcoin daemon health and RPC connectivity
+# - Reports status and provides monitoring guidance
+#
+# Usage:
+#   # Environment variable (recommended):
+#   BITCOIN_USER=testnet-bitcoin bitcoin-up
+#
+#   # Or traditional flag (backward compatibility):
+#   bitcoin-up --user testnet-bitcoin
+#
+# What it does:
+# - Checks if bitcoin daemon process is already running
+# - Starts bitcoin daemon process if needed
+# - Waits for startup and verifies health
+# - Reports final status
+#
+# Dependencies: Run 'bitcoin-init' first for complete setup
+#
 set -euo pipefail
 source "$(dirname "$0")/bitcoin-lib.sh"
+
+log_echo() {
+    echo "bitcoin-up: $@"
+}
+
+# Initialize from environment variable (can be overridden by flag)
+BITCOIN_USER="${BITCOIN_USER:-}"
+
+# Parse command line arguments (override environment variable)
+while [[ $# -gt 0 ]]; do
+    case $1 in
+    --user)
+        BITCOIN_USER="$2"
+        shift 2
+        ;;
+    -h | --help)
+        echo "Usage: bitcoin-up [options]"
+        echo ""
+        echo "Environment Variable (recommended):"
+        echo "  BITCOIN_USER                     Bitcoin user to start"
+        echo ""
+        echo "Options (override environment variable):"
+        echo "  --user <username>                Bitcoin user to start"
+        echo "  -h, --help                       Show this help"
+        echo ""
+        echo "Examples:"
+        echo "  # Using environment variable (recommended):"
+        echo "  BITCOIN_USER=testnet-bitcoin bitcoin-up"
+        echo ""
+        echo "  # Using flag (backward compatibility):"
+        echo "  bitcoin-up --user testnet-bitcoin"
+        exit 0
+        ;;
+    *)
+        echo "bitcoin-up: Unknown option: $1"
+        echo "bitcoin-up: Use --help for usage information"
+        exit 1
+        ;;
+    esac
+done
+
+# Validate arguments
+if [[ -z "$BITCOIN_USER" ]]; then
+    log_echo "ERROR: BITCOIN_USER environment variable or --user flag is required"
+    echo "Usage: BITCOIN_USER=testnet-bitcoin bitcoin-up"
+    echo "   or: bitcoin-up --user testnet-bitcoin"
+    exit 1
+fi
+
+# Check prerequisites
+if ! id "$BITCOIN_USER" &>/dev/null; then
+    log_echo "✗ User '$BITCOIN_USER' not found. Run: bitcoin-init first"
+    exit 1
+fi
+
+if ! sudo -u "$BITCOIN_USER" test -f "/home/$BITCOIN_USER/run-bitcoin"; then
+    log_echo "✗ Not initialized. Run: bitcoin-init first"
+    exit 1
+fi
+
+# Check if already running
+if is_bitcoin_running "$BITCOIN_USER"; then
+    log_echo "✓ Bitcoin daemon already running for $BITCOIN_USER"
+
+    # Test RPC connectivity
+    home_dir="/home/$BITCOIN_USER"
+    if sudo -u "$BITCOIN_USER" bitcoin-cli -conf="$home_dir/bitcoin.conf" getblockchaininfo >/dev/null 2>&1; then
+        log_echo "✓ RPC connectivity verified"
+    else
+        log_echo "⚠ Bitcoin daemon running but RPC not ready yet"
+    fi
+    exit 0
+fi
+
+# Update configuration and start bitcoin daemon
+update_bitcoin_operator "$BITCOIN_USER"
+sudo su - "$BITCOIN_USER" -c "nohup ./run-bitcoin > /dev/null 2>&1 &"
+log_echo "✓ Bitcoin daemon started"
+
+# Wait a moment for startup
+sleep 3
+
+# Verify it started successfully
+if is_bitcoin_running "$BITCOIN_USER"; then
+    log_echo "✓ Bitcoin daemon is running"
+
+    # Wait for RPC to become available (with timeout)
+    countdown=30
+    home_dir="/home/$BITCOIN_USER"
+
+    log_echo "Waiting for RPC to become available..."
+    while [[ $countdown -gt 0 ]]; do
+        if sudo -u "$BITCOIN_USER" bitcoin-cli -conf="$home_dir/bitcoin.conf" getblockchaininfo >/dev/null 2>&1; then
+            log_echo "✓ RPC connectivity verified"
+
+            # Show basic status
+            blockcount=$(sudo -u "$BITCOIN_USER" bitcoin-cli -conf="$home_dir/bitcoin.conf" getblockcount 2>/dev/null || echo "unknown")
+            chainname=$(sudo -u "$BITCOIN_USER" bitcoin-cli -conf="$home_dir/bitcoin.conf" getblockchaininfo 2>/dev/null | jq -r '.chain' 2>/dev/null || echo "unknown")
+
+            log_echo "✓ Network: $chainname, Block count: $blockcount"
+            log_echo "✓ Bitcoin daemon is healthy and ready"
+            exit 0
+        fi
+
+        sleep 1
+        ((countdown--))
+    done
+
+    log_echo "⚠ Bitcoin daemon started but RPC not yet available (may still be starting up)"
+    log_echo "  Check logs: tail -f /home/$BITCOIN_USER/logs/bitcoin.log"
+else
+    log_echo "✗ Failed to start bitcoin daemon"
+    log_echo "  Check logs: tail -f /home/$BITCOIN_USER/logs/bitcoin.log"
+    exit 1
+fi

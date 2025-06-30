@@ -1,3 +1,122 @@
 #!/bin/bash
+#
+# bitcoin-init - One-time Bitcoin Core daemon initialization and deployment
+#
+# Complete Bitcoin Core environment setup:
+# - Bitcoin user creation and environment setup
+# - Bitcoin Core configuration generation
+# - Complete bitcoin operator configuration
+#
+# This is a one-time setup script (like 'terraform init')
+# After running this, use 'bitcoin-up' to start the Bitcoin daemon
+#
+# Usage:
+#   # Environment variables (recommended):
+#   ARCH_NETWORK_MODE=testnet BITCOIN_USER=testnet-bitcoin bitcoin-init
+#
+#   # Or traditional flags (backward compatibility):
+#   bitcoin-init --network testnet --user testnet-bitcoin
+#
+# What it does:
+# - Creates bitcoin user and directory structure
+# - Generates Bitcoin Core configuration
+# - Deploys bitcoin scripts and configuration
+# - Does NOT start the bitcoin daemon (use bitcoin-up)
+#
+# Idempotent: Safe to run multiple times
+#
 set -euo pipefail
 source "$(dirname "$0")/bitcoin-lib.sh"
+
+log_echo() {
+    echo "bitcoin-init: $@"
+}
+
+usage() {
+    echo "Usage: bitcoin-init [options]"
+    echo ""
+    echo "Environment Variables (recommended):"
+    echo "  BITCOIN_NETWORK_MODE              Network mode (devnet|testnet|testnet4|signet|mainnet|regtest)"
+    echo "  BITCOIN_USER                      Bitcoin user account name"
+    echo "  BITCOIN_RPC_USER                  RPC username (default: bitcoin)"
+    echo "  BITCOIN_RPC_PASSWORD              RPC password (default: auto-generated)"
+    echo ""
+    echo "Options (override environment variables):"
+    echo "  --network <network>               Network mode (devnet|testnet|testnet4|signet|mainnet|regtest)"
+    echo "  --user <username>                 Bitcoin user"
+    echo "  -h, --help                        Show this help"
+    echo ""
+    echo "Examples:"
+    echo "  # Using environment variables (recommended):"
+    echo "  BITCOIN_NETWORK_MODE=mainnet BITCOIN_USER=testnet-bitcoin bitcoin-init"
+    echo ""
+    echo "  # Using flags (backward compatibility):"
+    echo "  bitcoin-init --network testnet --user testnet-bitcoin"
+}
+
+# Initialize from environment variables (can be overridden by flags)
+NETWORK_MODE="${BITCOIN_NETWORK_MODE:-}"
+BITCOIN_USER="${BITCOIN_USER:-}"
+
+# Parse command line arguments (override environment variables)
+while [[ $# -gt 0 ]]; do
+    case $1 in
+    --network)
+        NETWORK_MODE="$2"
+        shift 2
+        ;;
+    --user)
+        BITCOIN_USER="$2"
+        shift 2
+        ;;
+    -h | --help)
+        usage
+        exit 0
+        ;;
+    *)
+        echo "bitcoin-init: Unknown option: $1"
+        usage
+        exit 1
+        ;;
+    esac
+done
+
+# Validate arguments - all are required
+if [[ -z "$NETWORK_MODE" ]] || [[ -z "$BITCOIN_USER" ]]; then
+    log_echo "ERROR: All parameters are required:"
+    log_echo "  BITCOIN_NETWORK_MODE or --network"
+    log_echo "  BITCOIN_USER or --user"
+    echo ""
+    usage
+    exit 1
+fi
+
+# Validate network mode
+case "$NETWORK_MODE" in
+devnet | testnet | testnet4 | signet | mainnet | main | regtest)
+    # Valid network modes
+    ;;
+*)
+    log_echo "ERROR: Invalid network mode: $NETWORK_MODE"
+    log_echo "Valid modes: devnet, testnet, testnet4, signet, mainnet, regtest"
+    exit 1
+    ;;
+esac
+
+# Check prerequisites
+if ! command -v bitcoind >/dev/null 2>&1; then
+    log_echo "✗ bitcoind binary not found. Install with: BITCOIN_VERSION=29.0 sync-bitcoin-bins"
+    exit 1
+fi
+
+if ! command -v bitcoin-cli >/dev/null 2>&1; then
+    log_echo "✗ bitcoin-cli binary not found. Install with: BITCOIN_VERSION=29.0 sync-bitcoin-bins"
+    exit 1
+fi
+
+init_bitcoin_operator "$BITCOIN_USER" "$NETWORK_MODE"
+
+# Auto-backup after initialization
+$SCRIPT_ROOT/backup-all
+
+log_echo "✓ Initialized. Start with: bitcoin-up"

@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# check-env - Host environment security assessment
+# system-status - Host environment security assessment
 #
 # Validates host security posture for validator operations.
 # Provides opinionated security recommendations based on best practices.
@@ -143,6 +143,31 @@ if check_command ufw; then
         else
             log_bad "Gossip port 29001 not configured - validator cannot join network"
             echo "   Critical: Run ./validator-init to configure validator networking"
+        fi
+
+        # Check for Bitcoin P2P ports
+        echo
+        BITCOIN_PORTS_OPEN=""
+        for PORT in 8333 18333 48333 38333 18444; do
+            if echo "$UFW_STATUS" | grep -q "$PORT/tcp"; then
+                NETWORK_TYPE="unknown"
+                case "$PORT" in
+                    8333) NETWORK_TYPE="mainnet" ;;
+                    18333) NETWORK_TYPE="testnet" ;;
+                    48333) NETWORK_TYPE="testnet4" ;;
+                    38333) NETWORK_TYPE="signet" ;;
+                    18444) NETWORK_TYPE="regtest/devnet" ;;
+                esac
+                BITCOIN_PORTS_OPEN="$BITCOIN_PORTS_OPEN $PORT($NETWORK_TYPE)"
+            fi
+        done
+
+        if [ -n "$BITCOIN_PORTS_OPEN" ]; then
+            log_warn "Bitcoin P2P ports open:$BITCOIN_PORTS_OPEN"
+            echo "   Review: Bitcoin P2P increases attack surface - ensure intentional"
+            echo "   Secure alternative: Use outbound-only Bitcoin (default configuration)"
+        else
+            log_good "No Bitcoin P2P ports open (secure for validators)"
         fi
 
         # Count total rules
