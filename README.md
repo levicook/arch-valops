@@ -4,8 +4,7 @@
 
 ## Key Features
 
-- 🔐 **Encrypted Identity Management** - Secure peer identity lifecycle with automatic backup/restore
-- 🔒 **Security-First Architecture** - Complete isolation of signing keys from development infrastructure
+- 🔐 **Secure Identity Management** - Secure peer identity lifecycle with automatic backup/restore
 - 📊 **Real-Time Monitoring** - Comprehensive tmux dashboard with process, network, and log monitoring
 - 🚀 **Hybrid Development Model** - Build in VMs, deploy on bare metal for optimal performance
 - 🔄 **Infrastructure-as-Code** - Idempotent, version-controlled validator operations
@@ -14,42 +13,15 @@
 
 ## Quick Start
 
-The fastest way to get started is using the pre-configured validator environments:
+**🚀 New to valops?** → **[QUICK-START.md](docs/QUICK-START.md)** - Get running in 30 minutes
+
+**The fastest path**: Published releases + remote titan service = no VM setup needed!
 
 ```bash
-# 1. Clone and setup
 git clone https://github.com/levicook/arch-valops.git ~/valops && cd ~/valops && direnv allow
-# direnv: loading ~/valops/.envrc
-# 🔧 valops project environment loaded
-# Scripts available: validator-init, validator-up, validator-down, etc.
-# direnv: export ~PATH
-
-# 2. Setup age encryption keys (one-time)
 setup-age-keys
-
-# 3. Sync latest binaries (if using hybrid development)
-SYNC_STRATEGY_ARCH=vm sync-arch-bins       # Arch binaries from dev VM
-SYNC_STRATEGY_BITCOIN=vm sync-bitcoin-bins # Bitcoin binaries from dev VM
-sync-titan-bins                            # Titan binary from dev VM
-
-# 4. Use pre-configured testnet environment
-cd validators/testnet
-direnv allow
-# 🔧 Testnet validator environment loaded
-#   VALIDATOR_USER=testnet-validator
-#   ARCH_NETWORK_MODE=testnet
-
-# 5. Initialize validator with encrypted identity (one-time)
-VALIDATOR_ENCRYPTED_IDENTITY_KEY=~/validator-identity.age validator-init
-
-# 6. Start validator
-validator-up
-
-# 7. Monitor with comprehensive dashboard
-validator-dashboard
-
-# 8. Stop validator
-validator-down
+sync-arch-bins && sync-bitcoin-bins  # No titan binary needed!
+cd validators/testnet && validator-init && validator-up
 ```
 
 ## Modern Systemd Architecture
@@ -88,17 +60,17 @@ cd validators/testnet && validator-up  # Uses VALIDATOR_USER=testnet-validator a
 The project includes ready-to-use validator environments with sensible defaults:
 
 ```bash
-# Testnet validator
+# Testnet validator (remote titan - no local indexer needed)
 cd validators/testnet && direnv allow
-# Sets: VALIDATOR_USER=testnet-validator, ARCH_NETWORK_MODE=testnet, endpoints, etc.
+# Sets: VALIDATOR_USER=testnet-validator, TITAN_MODE=remote, endpoints, etc.
 
-# Mainnet validator
+# Mainnet validator (remote titan - production ready)
 cd validators/mainnet && direnv allow
-# Sets: VALIDATOR_USER=mainnet-validator, ARCH_NETWORK_MODE=mainnet, endpoints, etc.
+# Sets: VALIDATOR_USER=mainnet-validator, TITAN_MODE=remote, endpoints, etc.
 
-# Development network
+# Development network (local titan - for testing)
 cd validators/devnet && direnv allow
-# Sets: VALIDATOR_USER=devnet-validator, ARCH_NETWORK_MODE=devnet, endpoints, etc.
+# Sets: VALIDATOR_USER=devnet-validator, TITAN_MODE=local, endpoints, etc.
 ```
 
 **Customization**: Create `.env` file in any validator directory to override defaults:
@@ -158,6 +130,21 @@ validator-down --clobber
 - Backups work across different hosts
 - All backups encrypted with age keys
 
+## Documentation
+
+**📚 Complete documentation** organized by role and use case:
+
+| Guide                                                     | For            | Focus                             |
+|-----------------------------------------------------------|----------------|-----------------------------------|
+| **[QUICK-START.md](docs/QUICK-START.md)**                 | New users      | Get running in 30 minutes         |
+| **[OPERATIONS.md](docs/OPERATIONS.md)**                   | Prod operators | Daily management                  |
+| **[SECURITY.md](docs/SECURITY.md)**                       | Security teams | Threat analysis & recommendations |
+| **[MANAGEMENT.md](docs/MANAGEMENT.md)**                   | Existing users | Binary updates & migrations       |
+| **[OBSERVABILITY.md](docs/OBSERVABILITY.md)**             | SRE/DevOps     | Monitoring & automation           |
+| **[DEVELOPMENT.md](docs/DEVELOPMENT.md)**                 | Contributors   | Architecture & development        |
+| **[CUSTOM-BINARIES.md](docs/CUSTOM-BINARIES.md)**         | Advanced users | Running modified binaries         |
+| **[IDENTITY-GENERATION.md](docs/IDENTITY-GENERATION.md)** | Security teams | Offline identity creation         |
+
 ## Project Structure
 
 ```
@@ -184,169 +171,111 @@ valops/
 │   ├── arch-validator@.service       # Validator systemd unit
 │   ├── arch-bitcoind@.service        # Bitcoin systemd unit
 │   └── arch-titan@.service           # Titan systemd unit
-└── docs/                             # Streamlined documentation (7 focused guides)
-    ├── CUSTOM-BINARIES.md            # Running modified blockchain binaries
-    ├── DEVELOPMENT.md                # Contributors: Architecture & development
-    ├── IDENTITY-GENERATION.md        # Security teams: Offline identity creation
-    ├── MANAGEMENT.md                 # Existing users: Binary updates & migrations
-    ├── OBSERVABILITY.md              # SRE/DevOps: Monitoring & automation
-    ├── OPERATIONS.md                 # Prod operators: Daily management
-    ├── QUICK-START.md                # New users: Get running in 30 minutes
-    └── SECURITY.md                   # Security teams: Threat analysis & recommendations
+└── docs/                             # Streamlined documentation (8 focused guides)
 ```
 
 ## Core Operations
 
 ### Security Assessment
 ```bash
-check-env   # Comprehensive host security assessment (run first)
+system-status   # Comprehensive host security assessment (run first)
 ```
 
-### Environment Setup
+### Binary Management
+
+**Production Path (Recommended):**
 ```bash
 setup-age-keys       # Setup age encryption keys (one-time)
-sync-arch-bins       # Sync Arch Network binaries (release/vm strategies)
-sync-bitcoin-bins    # Sync Bitcoin Core binaries (release/vm strategies)
-sync-titan-bins      # Sync Titan binary (vm strategy only)
+sync-arch-bins       # Download latest Arch Network release
+sync-bitcoin-bins    # Download Bitcoin Core release
+# No titan binary needed - uses remote titan service!
+```
+
+**Development Path (Advanced):**
+```bash
+sync-titan-bins                            # Sync Titan binary (vm strategy only)
+SYNC_STRATEGY_ARCH=vm sync-arch-bins       # Arch binaries from dev VM
+SYNC_STRATEGY_BITCOIN=vm sync-bitcoin-bins # Bitcoin binaries from dev VM
 ```
 
 ### Validator Lifecycle
 
 **Using Pre-configured Environments (Recommended):**
 ```bash
-# Initialize testnet validator
-cd validators/testnet
+# Initialize mainnet validator (uses remote titan)
+cd validators/mainnet
 VALIDATOR_ENCRYPTED_IDENTITY_KEY=validator-identity.age validator-init
-
-# Start, monitor, stop
 validator-up
+
+# Monitor
 validator-dashboard
-validator-down
 ```
 
-**Using Environment Variables:**
+**Custom Configuration:**
 ```bash
-# Initialize validator
-VALIDATOR_USER=testnet-validator ARCH_NETWORK_MODE=testnet VALIDATOR_ENCRYPTED_IDENTITY_KEY=validator-identity.age validator-init
+# Environment variables (recommended)
+VALIDATOR_USER=my-validator ARCH_NETWORK_MODE=testnet validator-init
+VALIDATOR_USER=my-validator validator-up
 
-# Start, monitor, stop
-VALIDATOR_USER=testnet-validator validator-up
-VALIDATOR_USER=testnet-validator validator-dashboard
-VALIDATOR_USER=testnet-validator validator-down
+# Or traditional flags (backward compatibility)
+validator-init --user my-validator --network testnet
+validator-up --user my-validator
 ```
 
-**Using Traditional Flags:**
+### Operations
 ```bash
-validator-init --user testnet-validator --network testnet --encrypted-identity-key validator-identity.age
-validator-up --user testnet-validator
-validator-down --user testnet-validator
+# Daily operations
+validator-dashboard                    # Real-time monitoring dashboard
+backup-identities                     # Manual backup of all identities
+system-status                         # Security and resource assessment
+
+# Maintenance
+validator-down && validator-up         # Clean restart
+validator-down --clobber              # Complete removal (with backup)
 ```
 
-## Monitoring Dashboard
+## Advanced Features
 
-The `validator-dashboard` provides real-time observability through a sophisticated tmux interface:
-
+### Development VM Integration
 ```bash
-# Using pre-configured environment
-cd validators/testnet && validator-dashboard
+# Build custom binaries in isolated VM
+multipass launch --name dev-env --memory 4G --disk 20G --cpus 2
+# See CUSTOM-BINARIES.md for complete VM setup
 
-# Using environment variables
-VALIDATOR_USER=testnet-validator validator-dashboard
-
-# Using flags
-validator-dashboard --user testnet-validator
+# Sync custom builds
+SYNC_STRATEGY_ARCH=vm sync-arch-bins
+sync-titan-bins
 ```
 
-**Dashboard Features:**
-- **Status Monitoring**: Real-time validator health, network connectivity, data metrics
-- **Live Logs**: Streaming validator activity with error highlighting
-- **System Resources**: CPU, memory, and network usage monitoring
-- **Operational Guidance**: Built-in help and troubleshooting commands
-
-**Navigation:**
-- `Ctrl+b + n/p`: Switch windows | `Ctrl+b + arrows`: Switch panes | `Ctrl+b + d`: Detach
-
-## Directory-Agnostic Operation
-
-All scripts work from any directory thanks to intelligent project root detection:
-
+### Identity Security
 ```bash
-# Works from project root
-cd ~/valops && validator-up
+# Offline identity generation (air-gapped machine)
+validator --generate-peer-id --data-dir $(mktemp -d) | grep secret_key | cut -d'"' -f4 | age -r "$HOST_PUBLIC_KEY" -o validator-identity.age
 
-# Works from subdirectories
-cd ~/valops/docs && validator-up
-
-# Works from pre-configured environments
-cd ~/valops/validators/testnet && validator-up
-
-# Works from anywhere if scripts/ is in PATH
-cd ~ && validator-up
+# Deploy encrypted identity
+VALIDATOR_ENCRYPTED_IDENTITY_KEY=validator-identity.age validator-init
 ```
 
-## Environment Integration
-
-### direnv Integration (Recommended)
-
-1. **Install direnv**: `sudo apt install direnv` (or your package manager)
-2. **Hook into shell**: `echo 'eval "$(direnv hook bash)"' >> ~/.bashrc`
-3. **Use pre-configured environments**:
-   ```bash
-   cd validators/testnet
-   direnv allow
-   # Environment automatically loaded with all necessary variables
-   ```
-
-### Manual Setup
-
-If not using direnv, you can source environments manually:
+### Network Flexibility
 ```bash
-source validators/testnet/.envrc
-validator-up  # Uses testnet configuration
+# Multiple networks supported
+cd validators/testnet && validator-up    # Testnet
+cd validators/mainnet && validator-up    # Mainnet  
+cd validators/devnet && validator-up     # Development
 ```
 
-## Security Model
+## Contributing
 
-This toolkit implements **defense in depth** with multiple isolation layers:
+See **[DEVELOPMENT.md](docs/DEVELOPMENT.md)** for:
+- Architecture decisions and patterns
+- Development environment setup
+- Testing procedures
+- Contribution guidelines
 
-1. **Development Keys** (SSH, GPG, GitHub) - Isolated to developer laptop via agent forwarding
-2. **Infrastructure Keys** - Minimal scope server access keys
-3. **Validator Signing Keys** - Completely separate, hardware-secured, never touched by this toolkit
+## Security
 
-**Security Guarantee**: Even total compromise of valops infrastructure cannot access validator funds.
-
-## Migration Notes
-
-**🚀 Upgrading from older valops?** See **[MIGRATION.md](docs/MIGRATION.md)** for a complete migration guide with examples.
-
-**Quick summary of changes:**
-- **Scripts moved**: All scripts now in `scripts/` directory (automatically in PATH with direnv)
-- **Interface changed**: Environment variables preferred over flags (flags still work)
-- **Pre-configured environments**: Use `validators/{testnet,mainnet,devnet}/` for easier setup
-- **Directory agnostic**: Scripts work from anywhere, no need to `cd` to project root
-
-## Documentation
-
-### 🚀 **Getting Started**
-- **[Quick Start Guide](docs/QUICK-START.md)** - New users: Get validator running in 30 minutes
-- **[Operations Guide](docs/OPERATIONS.md)** - Production operators: Daily management & troubleshooting
-- **[Security Guide](docs/SECURITY.md)** - Security teams: Threat analysis & production recommendations
-
-### 🔧 **Management & Operations**
-- **[Management Guide](docs/MANAGEMENT.md)** - Existing users: Binary updates, upgrades & migrations
-- **[Observability Guide](docs/OBSERVABILITY.md)** - SRE/DevOps: Monitoring, alerting & automation
-- **[Identity Generation Guide](docs/IDENTITY-GENERATION.md)** - Security teams: Secure offline identity creation
-
-### 👩‍💻 **Development & Contributing**
-- **[Development Guide](docs/DEVELOPMENT.md)** - Contributors: System architecture & development workflow
-- **[Custom Binaries Guide](docs/CUSTOM-BINARIES.md)** - Running modified blockchain software
-
-## Quick Links
-
-- **New to validators?** → Start with [Quick Start Guide](docs/QUICK-START.md)
-- **Production operator?** → See [Operations Guide](docs/OPERATIONS.md) for daily management
-- **Security evaluation?** → See [Security Guide](docs/SECURITY.md) for threat analysis
-- **Need binary updates?** → See [Management Guide](docs/MANAGEMENT.md) for upgrades
-- **Setting up monitoring?** → See [Observability Guide](docs/OBSERVABILITY.md)
-- **Want to contribute?** → See [Development Guide](docs/DEVELOPMENT.md)
-- **Need custom binaries?** → See [Custom Binaries Guide](docs/CUSTOM-BINARIES.md)
+See **[SECURITY.md](docs/SECURITY.md)** for:
+- Threat model and security architecture
+- Key management best practices
+- Production deployment recommendations
+- Security assessment procedures

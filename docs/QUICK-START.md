@@ -21,18 +21,9 @@ setup-age-keys
 
 ## Step 2: Get Binaries
 
-**Option A: Official Releases (Recommended for Production)**
 ```bash
-ARCH_VERSION=v0.5.3 sync-arch-bins
-BITCOIN_VERSION=29.0 sync-bitcoin-bins
-```
-
-**Option B: Development VM (For Testing)**
-```bash
-# Requires multipass dev-env VM - see CUSTOM-BINARIES.md for setup
-SYNC_STRATEGY_ARCH=vm sync-arch-bins
-SYNC_STRATEGY_BITCOIN=vm sync-bitcoin-bins
-sync-titan-bins
+# Get official releases (no VM setup needed!)
+sync-arch-bins       # Downloads latest Arch Network release
 ```
 
 ## Step 3: Create Validator Identity
@@ -94,23 +85,22 @@ In the dashboard, look for:
 4. **Binary Management**: See [MANAGEMENT.md](MANAGEMENT.md) for updates
 5. **Monitoring**: See [OBSERVABILITY.md](OBSERVABILITY.md) for advanced monitoring
 
-## Common Issues
+## Advanced: Development Setup
 
-### "Age command not found"
+**Need local titan or custom builds?** For development and testing:
+
 ```bash
-sudo apt install -y age
+# For local titan indexer + VM-built binaries
+SYNC_STRATEGY_ARCH=vm sync-arch-bins       # Arch binaries from dev VM  
+SYNC_STRATEGY_BITCOIN=vm sync-bitcoin-bins # Bitcoin binaries from dev VM
+sync-titan-bins                            # Titan binary from dev VM
+
+# Use testnet with local titan
+cd validators/testnet && echo "TITAN_MODE=local" > .env
+validator-up                               # Runs local titan indexer
 ```
 
-### "VM connection refused" (Option B only)
-```bash
-multipass list && multipass start dev-env
-```
-
-### "Binary not found"
-Re-run step 2 with correct binary sync commands.
-
-### "Validator won't start"
-Check logs in dashboard or run: `journalctl -u arch-validator@testnet-validator -f`
+**Requirements**: Multipass dev-env VM - see [CUSTOM-BINARIES.md](CUSTOM-BINARIES.md) for setup
 
 **Need more help?** See [OPERATIONS.md](OPERATIONS.md) troubleshooting section.
 
