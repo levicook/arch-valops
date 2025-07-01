@@ -21,6 +21,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 generate_bitcoin_config() {
     local username="$1"
     local network_mode="$2"
+    local prune_size="$3"  # Optional: MB to keep, "0" or "false" for no pruning
     local data_dir="/home/$username/data"
     local rpc_port="8332"
     local p2p_port="8333"
@@ -88,6 +89,11 @@ logtimestamps=1
 disablewallet=1
 listen=1
 discover=1
+
+# Disk space management
+$(if [[ -n "${prune_size:-}" && "${prune_size}" != "0" && "${prune_size}" != "false" ]]; then
+    echo "prune=${prune_size}  # Keep ~${prune_size}MB of recent blocks"
+fi)
 
 # Network-specific settings
 $(if [ "$bitcoin_chain" != "main" ]; then

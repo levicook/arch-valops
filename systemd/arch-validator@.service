@@ -1,0 +1,56 @@
+[Unit]
+Description=Arch Network Validator (%i)
+Documentation=https://docs.arch.network/
+After=network.target
+
+[Service]
+Type=simple
+User=%i
+Group=%i
+WorkingDirectory=/home/%i
+
+# Environment file with runtime configuration
+EnvironmentFile=/home/%i/validator.env
+
+# Disable OpenTelemetry (matches proven run-validator)
+Environment="OTEL_SDK_DISABLED=true"
+Environment="OTEL_TRACES_EXPORTER=none"  
+Environment="OTEL_METRICS_EXPORTER=none"
+Environment="OTEL_LOGS_EXPORTER=none"
+
+# Direct binary execution with command line arguments (matches proven run-validator)
+ExecStart=/usr/local/bin/validator \
+    --network-mode ${ARCH_NETWORK_MODE} \
+    --data-dir ${ARCH_DATA_DIR} \
+    --rpc-bind-ip ${ARCH_RPC_BIND_IP} \
+    --rpc-bind-port ${ARCH_RPC_BIND_PORT} \
+    --titan-endpoint ${ARCH_TITAN_ENDPOINT} \
+    --titan-socket-endpoint ${ARCH_TITAN_SOCKET_ENDPOINT} \
+    --disable-telemetry
+
+# Automatic restart on failure
+Restart=always
+RestartSec=10
+StartLimitInterval=0
+
+# Logging
+StandardOutput=append:/home/%i/logs/validator.log
+StandardError=append:/home/%i/logs/validator.log
+
+# Resource limits
+LimitNOFILE=65536
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/%i
+# ProtectHome=tmpfs  # Conflicts with ReadWritePaths - disabled for now
+
+# Process management
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target 

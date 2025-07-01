@@ -365,7 +365,156 @@ fi
 
 echo
 
-# 8. File System Security
+# 8. DISK SPACE MONITORING
+echo -e "${BLUE}💾 DISK SPACE MONITORING${NC}"
+echo "----------------------------------------"
+
+# Overall disk usage check
+DISK_USAGE=$(df / | tail -1 | awk '{print $5}' | tr -d '%')
+if [ "$DISK_USAGE" -lt 70 ]; then
+    log_good "Root filesystem usage: ${DISK_USAGE}% (healthy)"
+elif [ "$DISK_USAGE" -lt 85 ]; then
+    log_warn "Root filesystem usage: ${DISK_USAGE}% (monitor closely)"
+else
+    log_bad "Root filesystem usage: ${DISK_USAGE}% (CRITICAL - cleanup needed)"
+fi
+
+DISK_AVAIL=$(df -h / | tail -1 | awk '{print $4}')
+echo "   Available space: $DISK_AVAIL"
+
+# Check for large files in critical areas
+echo
+log_info "Scanning for large files in critical areas..."
+
+# Bitcoin data directories (the main culprit!)
+for bitcoin_user in testnet-bitcoin mainnet-bitcoin devnet-bitcoin; do
+    if [ -d "/home/$bitcoin_user/data" ]; then
+        BITCOIN_SIZE=$(sudo du -sh "/home/$bitcoin_user/data" 2>/dev/null | cut -f1)
+        BITCOIN_SIZE_BYTES=$(sudo du -sb "/home/$bitcoin_user/data" 2>/dev/null | cut -f1)
+
+        # Check if Bitcoin is using >50GB (indicates no pruning)
+        if [ "$BITCOIN_SIZE_BYTES" -gt 53687091200 ]; then  # 50GB in bytes
+            log_bad "Bitcoin data ($bitcoin_user): $BITCOIN_SIZE (likely unpruned)"
+            echo "   Recommendation: Enable pruning with BITCOIN_PRUNE_SIZE=10000"
+
+            # Check for specific large directories
+            BLOCKS_SIZE=$(sudo du -sh "/home/$bitcoin_user/data/blocks" 2>/dev/null | cut -f1 || echo "N/A")
+            CHAINSTATE_SIZE=$(sudo du -sh "/home/$bitcoin_user/data/chainstate" 2>/dev/null | cut -f1 || echo "N/A")
+            echo "     blocks/: $BLOCKS_SIZE, chainstate/: $CHAINSTATE_SIZE"
+        elif [ "$BITCOIN_SIZE_BYTES" -gt 10737418240 ]; then  # 10GB in bytes
+            log_warn "Bitcoin data ($bitcoin_user): $BITCOIN_SIZE (monitor growth)"
+        else
+            log_good "Bitcoin data ($bitcoin_user): $BITCOIN_SIZE (efficient)"
+        fi
+    fi
+done
+
+# Log files monitoring
+echo
+log_info "Checking log file sizes..."
+
+# System logs
+SYSLOG_SIZE=$(sudo du -sh /var/log 2>/dev/null | cut -f1)
+SYSLOG_SIZE_BYTES=$(sudo du -sb /var/log 2>/dev/null | cut -f1)
+
+if [ "$SYSLOG_SIZE_BYTES" -gt 1073741824 ]; then  # 1GB in bytes
+    log_warn "System logs: $SYSLOG_SIZE (large, consider logrotate tuning)"
+
+    # Find largest log files
+    echo "   Largest log files:"
+    sudo find /var/log -type f -size +100M 2>/dev/null | head -3 | while read file; do
+        if [ -n "$file" ]; then
+            SIZE=$(sudo du -sh "$file" | cut -f1)
+            echo "     $file: $SIZE"
+        fi
+    done
+else
+    log_good "System logs: $SYSLOG_SIZE (reasonable)"
+fi
+
+# Journal logs
+JOURNAL_SIZE=$(sudo journalctl --disk-usage 2>/dev/null | grep -o '[0-9.]*[KMGT]*B' | tail -1)
+JOURNAL_SIZE_BYTES=$(sudo du -sb /var/log/journal 2>/dev/null | cut -f1 || echo "0")
+
+if [ "$JOURNAL_SIZE_BYTES" -gt 1073741824 ]; then  # 1GB in bytes
+    log_warn "Journal logs: $JOURNAL_SIZE (large)"
+    echo "   Recommendation: sudo journalctl --vacuum-size=500M"
+else
+    log_good "Journal logs: $JOURNAL_SIZE (reasonable)"
+fi
+
+# Validator data directories
+echo
+for validator_user in testnet-validator mainnet-validator devnet-validator; do
+    if [ -d "/home/$validator_user/data" ]; then
+        VALIDATOR_SIZE=$(sudo du -sh "/home/$validator_user/data" 2>/dev/null | cut -f1)
+        VALIDATOR_SIZE_BYTES=$(sudo du -sb "/home/$validator_user/data" 2>/dev/null | cut -f1)
+
+        if [ "$VALIDATOR_SIZE_BYTES" -gt 1073741824 ]; then  # 1GB in bytes
+            log_warn "Validator data ($validator_user): $VALIDATOR_SIZE (monitor)"
+        else
+            log_good "Validator data ($validator_user): $VALIDATOR_SIZE (efficient)"
+        fi
+
+        # Check logs specifically
+        if [ -f "/home/$validator_user/logs/validator.log" ]; then
+            LOG_SIZE=$(sudo du -sh "/home/$validator_user/logs/validator.log" 2>/dev/null | cut -f1)
+            LOG_SIZE_BYTES=$(sudo du -sb "/home/$validator_user/logs/validator.log" 2>/dev/null | cut -f1)
+
+            if [ "$LOG_SIZE_BYTES" -gt 104857600 ]; then  # 100MB in bytes
+                log_warn "Validator log ($validator_user): $LOG_SIZE (large)"
+                echo "   Note: Logrotate should manage this automatically"
+            fi
+        fi
+    fi
+done
+
+# Titan data directories
+for titan_user in testnet-titan mainnet-titan devnet-titan; do
+    if [ -d "/home/$titan_user/data" ]; then
+        TITAN_SIZE=$(sudo du -sh "/home/$titan_user/data" 2>/dev/null | cut -f1)
+        TITAN_SIZE_BYTES=$(sudo du -sb "/home/$titan_user/data" 2>/dev/null | cut -f1)
+
+        if [ "$TITAN_SIZE_BYTES" -gt 5368709120 ]; then  # 5GB in bytes
+            log_warn "Titan data ($titan_user): $TITAN_SIZE (monitor growth)"
+        else
+            log_good "Titan data ($titan_user): $TITAN_SIZE (reasonable)"
+        fi
+    fi
+done
+
+# Quick check for other large files
+echo
+log_info "Scanning for unexpected large files..."
+LARGE_FILES=$(sudo find /home -type f -size +1G 2>/dev/null | grep -v "/home/.*/data/" | head -3)
+if [ -n "$LARGE_FILES" ]; then
+    log_warn "Unexpected large files found:"
+    echo "$LARGE_FILES" | while read file; do
+        if [ -n "$file" ]; then
+            SIZE=$(sudo du -sh "$file" | cut -f1)
+            echo "   $file: $SIZE"
+        fi
+    done
+else
+    log_good "No unexpected large files found"
+fi
+
+# Disk usage recommendations
+echo
+if [ "$DISK_USAGE" -gt 85 ]; then
+    echo -e "${YELLOW}💡 DISK CLEANUP RECOMMENDATIONS:${NC}"
+    echo "  • Clean journal logs: sudo journalctl --vacuum-size=500M"
+    echo "  • Enable Bitcoin pruning: Set BITCOIN_PRUNE_SIZE=10000 in .envrc"
+    echo "  • Check log rotation: sudo logrotate -f /etc/logrotate.conf"
+    echo "  • Remove old packages: sudo apt autoremove && sudo apt autoclean"
+    if [ "$DISK_USAGE" -gt 95 ]; then
+        echo -e "${RED}  ⚠️  URGENT: Consider stopping services if >95% full${NC}"
+    fi
+fi
+
+echo
+
+# 9. File System Security
 echo -e "${BLUE}📁 FILE SYSTEM SECURITY${NC}"
 echo "----------------------------------------"
 
@@ -398,10 +547,10 @@ fi
 echo
 
 # Summary and recommendations
-echo -e "${BLUE}📋 SECURITY ASSESSMENT SUMMARY${NC}"
+echo -e "${BLUE}📋 SYSTEM ASSESSMENT SUMMARY${NC}"
 echo "========================================="
 echo
-echo -e "${CYAN}This assessment covers basic host security for validator operations.${NC}"
+echo -e "${CYAN}This assessment covers host security and disk monitoring for validator operations.${NC}"
 echo -e "${CYAN}For production deployments, consider additional measures:${NC}"
 echo
 echo "🔐 Additional Hardening:"
@@ -416,6 +565,8 @@ echo "  • Use hardware security modules for signing keys"
 echo "  • Isolate validator network traffic"
 echo "  • Regular backup testing and disaster recovery"
 echo "  • Monitor validator-specific metrics"
+echo "  • Enable Bitcoin pruning to prevent disk space crises"
+echo "  • Run system-status regularly to monitor disk usage"
 echo
 echo -e "${GREEN}Run this check regularly to maintain security posture.${NC}"
 echo -e "${YELLOW}Review and act on any warnings or critical issues above.${NC}"

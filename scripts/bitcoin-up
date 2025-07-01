@@ -84,7 +84,7 @@ ensure_bitcoin_infrastructure() {
     ensure_systemd_service_unit_installed "arch-bitcoind@"
 
     # Configuration (reuse existing function)
-    ensure_bitcoin_configuration_current "$BITCOIN_USER" "$BITCOIN_NETWORK_MODE"
+    ensure_bitcoin_configuration_current "$BITCOIN_USER" "$BITCOIN_NETWORK_MODE" "${BITCOIN_PRUNE_SIZE:-}"
 
     # Operational concerns
     ensure_logrotate_enabled "$BITCOIN_USER" "bitcoin"
@@ -98,13 +98,14 @@ ensure_bitcoin_infrastructure() {
 ensure_bitcoin_configuration_current() {
     local username="$1"
     local network_mode="$2"
+    local prune_size="$3"
     local config_file="/home/$username/bitcoin.conf"
 
     # Generate current config and compare
     local temp_config=$(mktemp)
     trap "rm -f '$temp_config'" EXIT
 
-    generate_bitcoin_config "$username" "$network_mode" >"$temp_config"
+    generate_bitcoin_config "$username" "$network_mode" "$prune_size" >"$temp_config"
 
     # Update if different or missing
     if [[ ! -f "$config_file" ]] || ! cmp -s "$temp_config" "$config_file" 2>/dev/null; then

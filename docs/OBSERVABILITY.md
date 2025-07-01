@@ -353,10 +353,8 @@ command[check_validator]=/path/to/health-check.sh
 
 VALIDATOR_USER="testnet-validator"
 
-# Get validator PID
-PID=$(pgrep -f "validator.*$VALIDATOR_USER")
-
-if [ -n "$PID" ]; then
+# Check if validator is running
+if systemctl is-active arch-validator@$VALIDATOR_USER --quiet; then
     # CPU and memory usage
     ps -p $PID -o pid,ppid,cmd,%mem,%cpu --no-headers
 
@@ -398,7 +396,7 @@ if ! is_validator_running "$VALIDATOR_USER"; then
     echo "$(date): Validator not running, attempting restart"
 
     # Try to start validator
-    sudo -u $VALIDATOR_USER /home/$VALIDATOR_USER/run-validator &
+    systemctl start arch-validator@$VALIDATOR_USER
 
     sleep 10
 
@@ -435,7 +433,7 @@ fi
 
 # Perform update
 echo "Stopping validator for update..."
-sudo -u $VALIDATOR_USER /home/$VALIDATOR_USER/halt-validator
+systemctl stop arch-validator@$VALIDATOR_USER
 
 echo "Updating binaries..."
 ARCH_VERSION=$NEW_VERSION sync-arch-bins

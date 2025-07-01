@@ -29,7 +29,7 @@ BITCOIN_VERSION=29.0 sync-bitcoin-bins
 
 **Option B: Development VM (For Testing)**
 ```bash
-# Requires multipass dev-env VM - see CONTRIBUTING.md for setup
+# Requires multipass dev-env VM - see CUSTOM-BINARIES.md for setup
 SYNC_STRATEGY_ARCH=vm sync-arch-bins
 SYNC_STRATEGY_BITCOIN=vm sync-bitcoin-bins
 sync-titan-bins
@@ -110,7 +110,7 @@ multipass list && multipass start dev-env
 Re-run step 2 with correct binary sync commands.
 
 ### "Validator won't start"
-Check logs in dashboard or run: `tail -f /home/testnet-validator/logs/validator.log`
+Check logs in dashboard or run: `journalctl -u arch-validator@testnet-validator -f`
 
 **Need more help?** See [OPERATIONS.md](OPERATIONS.md) troubleshooting section.
 

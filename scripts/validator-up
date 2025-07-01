@@ -1,11 +1,12 @@
 #!/bin/bash
 #
-# validator-up - Start validator process
+# validator-up - Start validator using systemd IaC pattern
 #
-# Ensures validator process is running and healthy:
-# - Starts validator if not already running
-# - Verifies validator health and RPC connectivity
-# - Reports status and provides monitoring guidance
+# Infrastructure as Code approach:
+# 1. DECLARE: What infrastructure we need
+# 2. ENSURE: Infrastructure exists and is current
+# 3. START: Start the service via systemd
+# 4. VERIFY: Confirm service is healthy
 #
 # Usage:
 #   # Environment variable (recommended):
@@ -14,14 +15,7 @@
 #   # Or traditional flag (backward compatibility):
 #   validator-up --user testnet-validator
 #
-# What it does:
-# - Checks if validator process is already running
-# - Starts validator process if needed
-# - Waits for startup and verifies health
-# - Reports final status
-#
-# Dependencies: Run 'validator-init' first for complete setup
-#
+
 set -euo pipefail
 source "$(dirname "$0")/validator-lib.sh"
 
@@ -73,18 +67,95 @@ if [[ -z "$VALIDATOR_USER" ]]; then
     exit 1
 fi
 
+log_echo "🚀 Starting validator infrastructure: $VALIDATOR_USER"
+
+# === PHASE 1: DECLARE ===
+log_echo ""
+log_echo "📋 DECLARE: Required infrastructure"
+log_echo "  - User: $VALIDATOR_USER"
+log_echo "  - Service: arch-validator@$VALIDATOR_USER"
+log_echo "  - Data Dir: /home/$VALIDATOR_USER/data/.arch_data"
+log_echo "  - Environment: /home/$VALIDATOR_USER/validator.env"
+
+# === PHASE 2: ENSURE ===
+log_echo ""
+log_echo "🔧 ENSURE: Infrastructure exists and is current"
+
 # Check prerequisites
 if ! id "$VALIDATOR_USER" &>/dev/null; then
-    log_echo "✗ User '$VALIDATOR_USER' not found. Run: ./validator-init first"
+    log_echo "✗ User '$VALIDATOR_USER' not found. Run validator-init first"
     exit 1
 fi
 
-if ! sudo -u "$VALIDATOR_USER" test -f "/home/$VALIDATOR_USER/run-validator"; then
-    log_echo "✗ Not initialized. Run: ./validator-init first"
+if ! sudo -u "$VALIDATOR_USER" test -d "/home/$VALIDATOR_USER/data/.arch_data"; then
+    log_echo "✗ Validator data directory not found. Run validator-init first"
     exit 1
 fi
 
-# Update configuration and start validator
+# Update configuration (generates environment file)
+log_echo "  Updating validator configuration..."
 update_validator_operator "$VALIDATOR_USER"
-sudo su - "$VALIDATOR_USER" -c "nohup ./run-validator > /dev/null 2>&1 &"
-log_echo "✓ Validator started"
+
+# Install systemd service unit
+log_echo "  Installing systemd service unit..."
+ensure_systemd_service_unit_installed "arch-validator@" "$PROJECT_ROOT/systemd/arch-validator@.service"
+
+# === PHASE 3: START ===
+log_echo ""
+log_echo "🎯 START: Validator service via systemd"
+
+if is_systemd_service_running "arch-validator@$VALIDATOR_USER"; then
+    log_echo "✓ Validator already running, restarting for configuration updates..."
+    sudo systemctl restart "arch-validator@$VALIDATOR_USER"
+else
+    log_echo "  Starting validator service..."
+    sudo systemctl start "arch-validator@$VALIDATOR_USER"
+fi
+
+# === PHASE 4: VERIFY ===
+log_echo ""
+log_echo "🔍 VERIFY: Service health and connectivity"
+
+# Wait for service to be ready
+log_echo "  Waiting for validator to start..."
+if ! wait_for_service_ready "arch-validator@$VALIDATOR_USER" 30; then
+    log_echo "✗ Validator failed to start within 30 seconds"
+    log_echo "  Check status: systemctl status arch-validator@$VALIDATOR_USER"
+    log_echo "  Check logs: journalctl -u arch-validator@$VALIDATOR_USER -f"
+    exit 1
+fi
+
+# Basic health check via RPC
+log_echo "  Checking RPC connectivity..."
+countdown=15
+while [[ $countdown -gt 0 ]]; do
+    if timeout 3 curl -s -X POST -H "Content-Type: application/json" \
+        -d '{"jsonrpc":"2.0","method":"get_block_count","params":[],"id":1}' \
+        http://127.0.0.1:9002/ >/dev/null 2>&1; then
+        log_echo "✓ RPC endpoint responsive"
+        break
+    fi
+    countdown=$((countdown - 1))
+    sleep 1
+done
+
+if [[ $countdown -eq 0 ]]; then
+    log_echo "⚠ RPC endpoint not yet responsive (service may still be starting)"
+fi
+
+# Final status
+log_echo ""
+log_echo "✅ SUCCESS: Validator infrastructure operational"
+log_echo "  User: $VALIDATOR_USER"
+log_echo "  Service: arch-validator@$VALIDATOR_USER ($(systemctl is-active arch-validator@$VALIDATOR_USER))"
+log_echo "  Memory: $(systemctl show -p MemoryCurrent arch-validator@$VALIDATOR_USER | cut -d= -f2 | numfmt --to=iec 2>/dev/null || echo "unknown")"
+log_echo ""
+log_echo "📊 MONITORING:"
+log_echo "  Status: systemctl status arch-validator@$VALIDATOR_USER"
+log_echo "  Logs:   journalctl -u arch-validator@$VALIDATOR_USER -f"
+log_echo "  Stop:   validator-down"
+
+# Auto-backup after successful start
+log_echo ""
+log_echo "# Auto-backup after successful start"
+"$SCRIPT_ROOT/backup-all"

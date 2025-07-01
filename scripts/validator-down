@@ -1,6 +1,11 @@
 #!/bin/bash
 #
-# validator-down - Stop validator process
+# validator-down - Stop validator using systemd
+#
+# Clean systemd-based service management:
+# - Uses systemctl to stop validator service
+# - Supports --clobber for complete infrastructure removal
+# - Preserves backup functionality for safety
 #
 # Usage:
 #   # Environment variable (recommended):
@@ -9,6 +14,7 @@
 #   # Or traditional flags (backward compatibility):
 #   validator-down [--clobber] [--user testnet-validator]
 #
+
 set -euo pipefail
 source "$(dirname "$0")/validator-lib.sh"
 
@@ -63,11 +69,21 @@ if ! id "$VALIDATOR_USER" &>/dev/null; then
     exit 0
 fi
 
-# Stop validator process
-stop_validator "$VALIDATOR_USER"
+log_echo "🛑 Stopping validator: $VALIDATOR_USER"
 
-# Handle clobber (complete removal)
+# === STOP SERVICE ===
+if is_systemd_service_running "arch-validator@$VALIDATOR_USER"; then
+    log_echo "  Stopping validator service..."
+    sudo systemctl stop "arch-validator@$VALIDATOR_USER"
+    log_echo "✓ Validator service stopped"
+else
+    log_echo "✓ Validator service not running"
+fi
+
+# === HANDLE CLOBBER ===
 if [ "$CLOBBER" = true ]; then
+    log_echo ""
+    log_echo "⚠️  CLOBBER MODE: Complete infrastructure removal"
     log_echo "WARNING: About to completely remove validator '$VALIDATOR_USER'"
     log_echo "  This will delete: user account, home directory, and ALL data"
 
@@ -86,5 +102,26 @@ if [ "$CLOBBER" = true ]; then
     log_echo "Press Ctrl+C to abort!"
     sleep 3
 
-    clobber_user "$VALIDATOR_USER"
+    # Stop and disable service (if it exists)
+    if systemctl list-unit-files "arch-validator@$VALIDATOR_USER.service" &>/dev/null; then
+        sudo systemctl stop "arch-validator@$VALIDATOR_USER" 2>/dev/null || true
+        sudo systemctl disable "arch-validator@$VALIDATOR_USER" 2>/dev/null || true
+        log_echo "✓ Systemd service stopped and disabled"
+    fi
+
+    # Remove user and all data
+    clobber_validator_operator "$VALIDATOR_USER"
+
+    log_echo ""
+    log_echo "💀 CLOBBER COMPLETE: Validator '$VALIDATOR_USER' removed"
+    log_echo "  All user data, identity files, and configuration deleted"
+    log_echo "  Encrypted backups preserved in: ~/.valops/age/"
+else
+    log_echo ""
+    log_echo "✅ SUCCESS: Validator stopped cleanly"
+    log_echo "  User: $VALIDATOR_USER"
+    log_echo "  Service: arch-validator@$VALIDATOR_USER ($(systemctl is-active arch-validator@$VALIDATOR_USER))"
+    log_echo ""
+    log_echo "💡 RESTART: validator-up"
+    log_echo "   REMOVE:  validator-down --clobber"
 fi

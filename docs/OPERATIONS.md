@@ -44,7 +44,7 @@ validator-dashboard  # Check status window
 validator-down
 
 # Force stop if needed
-sudo pkill -f validator
+systemctl stop arch-validator@$VALIDATOR_USER
 ```
 
 ### Restarting
@@ -52,8 +52,8 @@ sudo pkill -f validator
 # Standard restart
 validator-down && validator-up
 
-# Emergency restart (manual process management - no systemd)
-sudo pkill -f validator && validator-up  # Force restart
+# Emergency restart with systemd
+systemctl restart arch-validator@$VALIDATOR_USER
 ```
 
 ## Binary Management
@@ -96,23 +96,35 @@ validator-dashboard
 
 ### Manual Health Checks
 ```bash
-# Process status
-ps aux | grep validator
+# Service status (systemd)
+systemctl status arch-validator@testnet-validator --no-pager
 
 # RPC health
 curl -X POST -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"get_block_count","params":[],"id":1}' http://127.0.0.1:9002/
 
-# Log analysis
-tail -20 /home/testnet-validator/logs/validator.log
-grep ERROR /home/testnet-validator/logs/validator.log | tail -10
+# Log analysis (systemd journal)
+journalctl -u arch-validator@testnet-validator -n 20 --no-pager
+journalctl -u arch-validator@testnet-validator --since "1 hour ago" -p err --no-pager
 ```
 
 ### Key Metrics to Monitor
-- **Process**: Validator running, single instance
+- **Service**: Validator systemd service active and running
 - **RPC**: Port 9002 responding
 - **Network**: Connected to Titan endpoints
 - **Disk**: Data directory growth
-- **Logs**: No recurring errors
+- **Logs**: No recurring errors in systemd journal
+
+### Service Architecture
+The system runs multiple systemd services:
+```bash
+# Check all arch services
+sudo systemctl list-units --type=service --state=active | grep arch
+
+# Typical output:
+# arch-bitcoind@testnet-bitcoin.service     loaded active running
+# arch-validator@testnet-validator.service  loaded active running
+# arch-titan@testnet-titan.service          loaded active running (if local)
+```
 
 **See [OBSERVABILITY.md](OBSERVABILITY.md) for comprehensive monitoring setup.**
 
@@ -133,16 +145,16 @@ ls -la /home/testnet-validator/logs/
 
 # Disk usage check
 df -h
-du -sh /home/testnet-validator/data/
+sudo du -sh /home/testnet-validator/data/
 ```
 
 ### Monthly
 ```bash
 # Review validator performance
-grep "block height" /home/testnet-validator/logs/validator.log | tail -20
+journalctl -u arch-validator@testnet-validator | grep "block height" | tail -20
 
-# Check for restarts
-grep "validator-up" /home/testnet-validator/logs/validator.log | wc -l
+# Check for restarts (systemd restart count)
+systemctl show arch-validator@testnet-validator -p NRestarts --value --no-pager
 
 # Binary updates (as needed)
 # Check for new releases and update per Binary Management section
@@ -155,8 +167,8 @@ grep "validator-up" /home/testnet-validator/logs/validator.log | wc -l
 
 **Diagnosis**:
 ```bash
-# Check recent logs
-tail -50 /home/testnet-validator/logs/validator.log
+# Check recent logs (systemd journal)
+journalctl -u arch-validator@testnet-validator -n 50 --no-pager
 
 # Verify binary
 which validator && validator --version
@@ -176,14 +188,14 @@ sudo -u testnet-validator ls -la /home/testnet-validator/
 
 **Diagnosis**:
 ```bash
-# Check processes
-htop -u testnet-validator
+# Check service status
+systemctl status arch-validator@testnet-validator --no-pager
 
-# Check disk usage
-du -sh /home/testnet-validator/data/*
+# Check disk usage (requires sudo for other users' directories)
+sudo du -sh /home/testnet-validator/data/*
 
-# Check for multiple processes
-ps aux | grep validator | wc -l
+# Check for multiple processes (should be 1 systemd service)
+systemctl is-active arch-validator@testnet-validator && echo "1" || echo "0"
 ```
 
 **Solutions**:

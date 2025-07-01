@@ -52,6 +52,22 @@ validator-dashboard
 validator-down
 ```
 
+## Modern Systemd Architecture
+
+The system uses **systemd services** for all process management:
+
+```bash
+# Service management (current reality)
+systemctl status arch-validator@testnet-validator    # Check status
+systemctl start arch-validator@testnet-validator     # Start service
+systemctl stop arch-validator@testnet-validator      # Stop service
+journalctl -u arch-validator@testnet-validator -f    # View logs
+
+# Script integration (IaC approach)
+validator-up     # Ensures service is running
+validator-down   # Stops service cleanly
+```
+
 ## Modern Environment-Driven Interface
 
 All scripts now use **environment variables first** with backward compatibility for flags:
@@ -164,18 +180,19 @@ valops/
 │   ├── testnet/.envrc                # Testnet configuration
 │   ├── mainnet/.envrc                # Mainnet configuration
 │   └── devnet/.envrc                 # Devnet configuration
-├── resources/                        # Deployable validator scripts
-│   ├── run-validator                 # Validator startup script
-│   └── halt-validator                # Validator shutdown script
+├── systemd/
+│   ├── arch-validator@.service       # Validator systemd unit
+│   ├── arch-bitcoind@.service        # Bitcoin systemd unit
+│   └── arch-titan@.service           # Titan systemd unit
 └── docs/                             # Streamlined documentation (7 focused guides)
-    ├── QUICK-START.md                # New users: Get running in 30 minutes
-    ├── OPERATIONS.md                 # Prod operators: Daily management
-    ├── SECURITY.md                   # Security teams: Threat analysis & recommendations
+    ├── CUSTOM-BINARIES.md            # Running modified blockchain binaries
+    ├── DEVELOPMENT.md                # Contributors: Architecture & development
+    ├── IDENTITY-GENERATION.md        # Security teams: Offline identity creation
     ├── MANAGEMENT.md                 # Existing users: Binary updates & migrations
     ├── OBSERVABILITY.md              # SRE/DevOps: Monitoring & automation
-    ├── CONTRIBUTING.md               # Contributors: Architecture & development
-    ├── IDENTITY-GENERATION.md        # Security teams: Offline identity creation
-    └── legacy/                       # Previous documentation (reference only)
+    ├── OPERATIONS.md                 # Prod operators: Daily management
+    ├── QUICK-START.md                # New users: Get running in 30 minutes
+    └── SECURITY.md                   # Security teams: Threat analysis & recommendations
 ```
 
 ## Core Operations
@@ -187,7 +204,7 @@ check-env   # Comprehensive host security assessment (run first)
 
 ### Environment Setup
 ```bash
-setup-age-keys  # Setup age encryption keys (one-time)
+setup-age-keys       # Setup age encryption keys (one-time)
 sync-arch-bins       # Sync Arch Network binaries (release/vm strategies)
 sync-bitcoin-bins    # Sync Bitcoin Core binaries (release/vm strategies)
 sync-titan-bins      # Sync Titan binary (vm strategy only)
@@ -321,7 +338,8 @@ This toolkit implements **defense in depth** with multiple isolation layers:
 - **[Identity Generation Guide](docs/IDENTITY-GENERATION.md)** - Security teams: Secure offline identity creation
 
 ### 👩‍💻 **Development & Contributing**
-- **[Contributing Guide](docs/CONTRIBUTING.md)** - Contributors: System architecture & development workflow
+- **[Development Guide](docs/DEVELOPMENT.md)** - Contributors: System architecture & development workflow
+- **[Custom Binaries Guide](docs/CUSTOM-BINARIES.md)** - Running modified blockchain software
 
 ## Quick Links
 
@@ -330,4 +348,5 @@ This toolkit implements **defense in depth** with multiple isolation layers:
 - **Security evaluation?** → See [Security Guide](docs/SECURITY.md) for threat analysis
 - **Need binary updates?** → See [Management Guide](docs/MANAGEMENT.md) for upgrades
 - **Setting up monitoring?** → See [Observability Guide](docs/OBSERVABILITY.md)
-- **Want to contribute?** → See [Contributing Guide](docs/CONTRIBUTING.md)
+- **Want to contribute?** → See [Development Guide](docs/DEVELOPMENT.md)
+- **Need custom binaries?** → See [Custom Binaries Guide](docs/CUSTOM-BINARIES.md)
