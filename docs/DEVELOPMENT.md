@@ -86,31 +86,31 @@ cd ~/valops && direnv allow
 sudo apt install -y shellcheck
 
 # Test environment
-./scripts/lib.sh --help
+./libs/lib.sh --help
 ```
 
 ### Making Script Changes
 
 #### Script Development
 ```bash
-# Make changes to scripts in scripts/ directory
-vim scripts/validator-up
+# Make changes to executable scripts in bin/ directory
+vim bin/validator-up
 
 # Test changes in testnet environment
 cd validators/testnet
-../scripts/validator-up --user testnet-validator
+../bin/validator-up --user testnet-validator
 
 # Test idempotency (should be safe to repeat)
-../scripts/validator-up --user testnet-validator
+../bin/validator-up --user testnet-validator
 ```
 
 #### Function Development
 ```bash
 # Edit shared functions
-vim scripts/lib.sh
+vim libs/lib.sh
 
 # Interactive testing
-source scripts/lib.sh
+source libs/lib.sh
 create_user "test-user"           # Test function
 is_validator_running "test-user"  # Test another function
 clobber_user "test-user"          # Cleanup
@@ -119,7 +119,7 @@ clobber_user "test-user"          # Cleanup
 #### Binary Sync Development
 ```bash
 # Test binary sync scripts
-vim scripts/sync-arch-bins
+vim bin/sync-arch-bins
 
 # Test both strategies
 ARCH_VERSION=v0.5.3 sync-arch-bins   # Release strategy
@@ -133,7 +133,7 @@ SYNC_STRATEGY_ARCH=vm sync-arch-bins # VM strategy
 #!/bin/bash
 # test-functions.sh - Test individual functions
 
-source scripts/lib.sh
+source libs/lib.sh
 
 # Test user management
 echo "Testing user management..."
@@ -256,7 +256,7 @@ create_user() {
 ### Interactive Development
 ```bash
 # Use lib.sh functions interactively
-source scripts/lib.sh
+source libs/lib.sh
 export VALIDATOR_USER=testnet-validator
 
 # Debug validator status via systemd
@@ -294,11 +294,12 @@ journalctl --since "1 hour ago" | grep "validator-up:"
 
 ### Linting and Quality Checks
 ```bash
-# Run shellcheck on all scripts
-find scripts/ -name "*.sh" -exec shellcheck {} \;
+# Run shellcheck on all scripts  
+find bin/ -name "*.sh" -exec shellcheck {} \;
+find libs/ -name "*.sh" -exec shellcheck {} \;
 
 # Check specific script
-shellcheck scripts/validator-up
+shellcheck bin/validator-up
 
 # Fix common issues
 # - Quote variables: "$var" not $var

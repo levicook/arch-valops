@@ -28,7 +28,7 @@
 # Idempotent: Safe to run multiple times
 #
 set -euo pipefail
-source "$(dirname "$0")/validator-lib.sh"
+source "$(dirname "$0")/../libs/validator-lib.sh"
 
 log_echo() {
     echo "validator-init: $@"
@@ -119,10 +119,10 @@ fi
 init_validator_operator "$VALIDATOR_USER" "$ENCRYPTED_IDENTITY_KEY" "$NETWORK_MODE"
 
 # Create backup of all identities (compose with backup-identities script)
-VALIDATOR_USER="$VALIDATOR_USER" "$SCRIPT_ROOT/backup-identities"
+VALIDATOR_USER="$VALIDATOR_USER" "$PROJECT_ROOT/bin/backup-identities"
 
 # Auto-backup after initialization
-$SCRIPT_ROOT/backup-all
+"$PROJECT_ROOT/bin/backup-all"
 
 log_echo "✓ Initialized. Start with: validator-up"
 

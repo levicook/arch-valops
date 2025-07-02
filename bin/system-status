@@ -16,7 +16,7 @@
 # Output: Clear good/questionable assessments with recommendations
 #
 set -euo pipefail
-source "$(dirname "$0")/lib.sh"
+source "$(dirname "$0")/../libs/lib.sh"
 
 # ANSI color codes
 RED='\033[0;31m'
@@ -393,7 +393,7 @@ for bitcoin_user in testnet-bitcoin mainnet-bitcoin devnet-bitcoin; do
         BITCOIN_SIZE_BYTES=$(sudo du -sb "/home/$bitcoin_user/data" 2>/dev/null | cut -f1)
 
         # Check if Bitcoin is using >50GB (indicates no pruning)
-        if [ "$BITCOIN_SIZE_BYTES" -gt 53687091200 ]; then  # 50GB in bytes
+        if [ "$BITCOIN_SIZE_BYTES" -gt 53687091200 ]; then # 50GB in bytes
             log_bad "Bitcoin data ($bitcoin_user): $BITCOIN_SIZE (likely unpruned)"
             echo "   Recommendation: Enable pruning with BITCOIN_PRUNE_SIZE=10000"
 
@@ -401,7 +401,7 @@ for bitcoin_user in testnet-bitcoin mainnet-bitcoin devnet-bitcoin; do
             BLOCKS_SIZE=$(sudo du -sh "/home/$bitcoin_user/data/blocks" 2>/dev/null | cut -f1 || echo "N/A")
             CHAINSTATE_SIZE=$(sudo du -sh "/home/$bitcoin_user/data/chainstate" 2>/dev/null | cut -f1 || echo "N/A")
             echo "     blocks/: $BLOCKS_SIZE, chainstate/: $CHAINSTATE_SIZE"
-        elif [ "$BITCOIN_SIZE_BYTES" -gt 10737418240 ]; then  # 10GB in bytes
+        elif [ "$BITCOIN_SIZE_BYTES" -gt 10737418240 ]; then # 10GB in bytes
             log_warn "Bitcoin data ($bitcoin_user): $BITCOIN_SIZE (monitor growth)"
         else
             log_good "Bitcoin data ($bitcoin_user): $BITCOIN_SIZE (efficient)"
@@ -417,7 +417,7 @@ log_info "Checking log file sizes..."
 SYSLOG_SIZE=$(sudo du -sh /var/log 2>/dev/null | cut -f1)
 SYSLOG_SIZE_BYTES=$(sudo du -sb /var/log 2>/dev/null | cut -f1)
 
-if [ "$SYSLOG_SIZE_BYTES" -gt 1073741824 ]; then  # 1GB in bytes
+if [ "$SYSLOG_SIZE_BYTES" -gt 1073741824 ]; then # 1GB in bytes
     log_warn "System logs: $SYSLOG_SIZE (large, consider logrotate tuning)"
 
     # Find largest log files
@@ -436,7 +436,7 @@ fi
 JOURNAL_SIZE=$(sudo journalctl --disk-usage 2>/dev/null | grep -o '[0-9.]*[KMGT]*B' | tail -1)
 JOURNAL_SIZE_BYTES=$(sudo du -sb /var/log/journal 2>/dev/null | cut -f1 || echo "0")
 
-if [ "$JOURNAL_SIZE_BYTES" -gt 1073741824 ]; then  # 1GB in bytes
+if [ "$JOURNAL_SIZE_BYTES" -gt 1073741824 ]; then # 1GB in bytes
     log_warn "Journal logs: $JOURNAL_SIZE (large)"
     echo "   Recommendation: sudo journalctl --vacuum-size=500M"
 else
@@ -450,7 +450,7 @@ for validator_user in testnet-validator mainnet-validator devnet-validator; do
         VALIDATOR_SIZE=$(sudo du -sh "/home/$validator_user/data" 2>/dev/null | cut -f1)
         VALIDATOR_SIZE_BYTES=$(sudo du -sb "/home/$validator_user/data" 2>/dev/null | cut -f1)
 
-        if [ "$VALIDATOR_SIZE_BYTES" -gt 1073741824 ]; then  # 1GB in bytes
+        if [ "$VALIDATOR_SIZE_BYTES" -gt 1073741824 ]; then # 1GB in bytes
             log_warn "Validator data ($validator_user): $VALIDATOR_SIZE (monitor)"
         else
             log_good "Validator data ($validator_user): $VALIDATOR_SIZE (efficient)"
@@ -461,7 +461,7 @@ for validator_user in testnet-validator mainnet-validator devnet-validator; do
             LOG_SIZE=$(sudo du -sh "/home/$validator_user/logs/validator.log" 2>/dev/null | cut -f1)
             LOG_SIZE_BYTES=$(sudo du -sb "/home/$validator_user/logs/validator.log" 2>/dev/null | cut -f1)
 
-            if [ "$LOG_SIZE_BYTES" -gt 104857600 ]; then  # 100MB in bytes
+            if [ "$LOG_SIZE_BYTES" -gt 104857600 ]; then # 100MB in bytes
                 log_warn "Validator log ($validator_user): $LOG_SIZE (large)"
                 echo "   Note: Logrotate should manage this automatically"
             fi
@@ -475,7 +475,7 @@ for titan_user in testnet-titan mainnet-titan devnet-titan; do
         TITAN_SIZE=$(sudo du -sh "/home/$titan_user/data" 2>/dev/null | cut -f1)
         TITAN_SIZE_BYTES=$(sudo du -sb "/home/$titan_user/data" 2>/dev/null | cut -f1)
 
-        if [ "$TITAN_SIZE_BYTES" -gt 5368709120 ]; then  # 5GB in bytes
+        if [ "$TITAN_SIZE_BYTES" -gt 5368709120 ]; then # 5GB in bytes
             log_warn "Titan data ($titan_user): $TITAN_SIZE (monitor growth)"
         else
             log_good "Titan data ($titan_user): $TITAN_SIZE (reasonable)"

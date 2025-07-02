@@ -96,7 +96,7 @@ SYNC_STRATEGY_BITCOIN=vm sync-bitcoin-bins # Bitcoin binaries from dev VM
 sync-titan-bins                            # Titan binary from dev VM
 
 # Use testnet with local titan
-cd validators/testnet && echo "TITAN_MODE=local" > .env
+cd validators/testnet && echo "ARCH_TITAN_MODE=local" > .env
 validator-up                               # Runs local titan indexer
 ```
 

@@ -13,7 +13,7 @@
 #   sync-arch-bins --strategy vm --version v0.5.3
 #
 set -euo pipefail
-source "$(dirname "$0")/sync-lib.sh"
+source "$(dirname "$0")/../libs/sync-lib.sh"
 
 # Usage function
 usage() {

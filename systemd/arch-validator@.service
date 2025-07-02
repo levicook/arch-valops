@@ -18,15 +18,8 @@ Environment="OTEL_TRACES_EXPORTER=none"
 Environment="OTEL_METRICS_EXPORTER=none"
 Environment="OTEL_LOGS_EXPORTER=none"
 
-# Direct binary execution with command line arguments (matches proven run-validator)
-ExecStart=/usr/local/bin/validator \
-    --network-mode ${ARCH_NETWORK_MODE} \
-    --data-dir ${ARCH_DATA_DIR} \
-    --rpc-bind-ip ${ARCH_RPC_BIND_IP} \
-    --rpc-bind-port ${ARCH_RPC_BIND_PORT} \
-    --titan-endpoint ${ARCH_TITAN_ENDPOINT} \
-    --titan-socket-endpoint ${ARCH_TITAN_SOCKET_ENDPOINT} \
-    --disable-telemetry
+# Direct binary execution using native validator environment variables
+ExecStart=/usr/local/bin/validator --disable-telemetry
 
 # Automatic restart on failure
 Restart=always

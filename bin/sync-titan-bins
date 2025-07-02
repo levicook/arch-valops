@@ -13,7 +13,7 @@
 #   sync-titan-bins --vm-name dev-env
 #
 set -euo pipefail
-source "$(dirname "$0")/sync-lib.sh"
+source "$(dirname "$0")/../libs/sync-lib.sh"
 
 # Usage function
 usage() {

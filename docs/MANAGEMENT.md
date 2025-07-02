@@ -181,7 +181,7 @@ tail -f /home/testnet-validator/logs/validator.log
 
 ### Environment Migration
 
-**From old structure** (scripts in root) **to new structure** (scripts in scripts/):
+**From old structure** (scripts in root) **to new structure** (executables in bin/, libraries in libs/):
 
 **Old pattern**:
 ```bash
@@ -197,7 +197,7 @@ validator-up  # Works from anywhere
 ```
 
 **Migration checklist**:
-- [ ] Update shell scripts/aliases that reference old paths
+- [ ] Update shell scripts/aliases that reference old paths (scripts/ → bin/ and libs/)
 - [ ] Update CI/CD pipelines with new script locations
 - [ ] Train team on new directory-agnostic operation
 - [ ] Test pre-configured validator environments
@@ -282,7 +282,7 @@ source validators/testnet/.envrc
 **Permission errors**:
 ```bash
 # Fix script permissions
-chmod +x scripts/sync-*-bins scripts/validator-*
+chmod +x bin/sync-*-bins bin/validator-*
 ```
 
 ## Best Practices

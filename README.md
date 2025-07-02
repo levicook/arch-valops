@@ -62,15 +62,15 @@ The project includes ready-to-use validator environments with sensible defaults:
 ```bash
 # Testnet validator (remote titan - no local indexer needed)
 cd validators/testnet && direnv allow
-# Sets: VALIDATOR_USER=testnet-validator, TITAN_MODE=remote, endpoints, etc.
+# Sets: VALIDATOR_USER=testnet-validator, ARCH_TITAN_MODE=remote, endpoints, etc.
 
 # Mainnet validator (remote titan - production ready)
 cd validators/mainnet && direnv allow
-# Sets: VALIDATOR_USER=mainnet-validator, TITAN_MODE=remote, endpoints, etc.
+# Sets: VALIDATOR_USER=mainnet-validator, ARCH_TITAN_MODE=remote, endpoints, etc.
 
 # Development network (local titan - for testing)
 cd validators/devnet && direnv allow
-# Sets: VALIDATOR_USER=devnet-validator, TITAN_MODE=local, endpoints, etc.
+# Sets: VALIDATOR_USER=devnet-validator, ARCH_TITAN_MODE=local, endpoints, etc.
 ```
 
 **Customization**: Create `.env` file in any validator directory to override defaults:
@@ -149,8 +149,9 @@ validator-down --clobber
 
 ```
 valops/
-├── .envrc                            # Root environment (adds scripts/ to PATH)
-├── scripts/                          # All executable scripts
+├── .envrc                            # Root environment (adds bin/ to PATH)
+├── bin/                              # All executable scripts
+├── libs/                             # Source-friendly library functions
 │   ├── backup-identities             # Backup all validator identities
 │   ├── lib.sh                        # Shared utilities library
 │   ├── setup-age-keys                # Age encryption keypair setup

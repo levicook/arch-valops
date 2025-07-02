@@ -1,0 +1,274 @@
+# Valops Project - Architectural Rules
+
+## Core Principles
+
+### Library Functions (`libs/*-lib.sh`)
+- **Source-friendly design** - safe to source without side effects
+- **NEVER use global variables** - only accept explicit arguments and use locals
+- **NEVER provide defaults** - caller's responsibility to handle defaults
+- **Pure functions** - side-effect free, predictable, testable
+- **Explicit parameter documentation** - comment with parameter list
+- **No executable code at file level** - only function definitions
+- **Example:**
+  ```bash
+  # Parameters: username data_dir rpc_bind_ip rpc_bind_port
+  update_validator_operator() {
+      local username="$1"
+      local data_dir="$2"
+      # ... no ${VAR:-default} patterns
+  }
+  ```
+
+### Environment Helper Functions (`libs/env-lib.sh`)
+- **Pure computation functions** - return values via echo, no side effects
+- **Configuration logic** - endpoint selection, path construction, etc.
+- **Reusable across environments** - testnet, mainnet, devnet
+- **Example:**
+  ```bash
+  # Parameters: network mode
+  default_titan_endpoint() {
+      local network="$1"
+      local mode="$2"
+      case "$network" in
+      testnet) echo "https://titan-public-http.test.arch.network" ;;
+      esac
+  }
+  ```
+
+## Service-Specific Variable Naming Convention
+
+**CRITICAL**: Multi-service environments MUST use service prefixes to avoid ambiguity:
+
+### **Required Prefixes:**
+- `ARCH_*` - Validator/Arch Network service variables
+- `BITCOIN_*` - Bitcoin node service variables  
+- `TITAN_*` - Titan indexer service variables
+
+### **Examples:**
+```bash
+# CORRECT - Clear service ownership
+export ARCH_DATA_DIR="/validator/data"
+export BITCOIN_DATA_DIR="/bitcoin/data"
+export TITAN_DATA_DIR="/titan/data"
+
+export ARCH_WEBSOCKET_ENABLED=true
+export ARCH_WEBSOCKET_BIND_PORT=8081
+export BITCOIN_RPC_BIND_PORT=8332
+export TITAN_HTTP_BIND_PORT=3030
+```
+
+### **WRONG - Ambiguous variables:**
+```bash
+# NEVER DO THIS - Which service?
+export DATA_DIR="/some/path"           # Validator? Bitcoin? Titan?
+export WEBSOCKET_ENABLED=true         # Which websocket server?
+export RPC_BIND_PORT=9002             # Which RPC endpoint?
+```
+
+### **Service Configuration Order:**
+Environment files should configure services in dependency order:
+1. **Bitcoin** (base layer)
+2. **Titan** (depends on Bitcoin for indexing)
+3. **Arch/Validator** (depends on both Bitcoin and Titan)
+
+### **Network Configuration Consistency:**
+**CRITICAL**: When running local infrastructure services, Bitcoin and Titan network modes MUST match:
+
+```bash
+# CORRECT - Network modes match
+export BITCOIN_NETWORK_MODE=mainnet
+export TITAN_NETWORK_MODE=mainnet
+
+# WRONG - Network mismatch causes titan startup failure
+export BITCOIN_NETWORK_MODE=mainnet  
+export TITAN_NETWORK_MODE=testnet    # ❌ MismatchedChain error
+```
+
+**Environment-specific patterns:**
+- **testnet**: Bitcoin=mainnet, Titan=mainnet (Arch validator testnet runs on Bitcoin mainnet)
+- **mainnet**: Bitcoin=mainnet, Titan=mainnet  
+- **devnet**: Bitcoin=regtest, Titan=regtest
+
+### **Service Independence Principle:**
+**CRITICAL**: Infrastructure service lifecycle is independent of application configuration:
+
+- **`ARCH_TITAN_MODE`**: Only affects **validator connection** (local vs remote titan endpoint)
+- **`titan-up`/`titan-down`**: **Infrastructure management** - operates independently of `ARCH_TITAN_MODE`
+- **Validator**: Can run with `ARCH_TITAN_MODE=remote` while local titan is down
+
+```bash
+# Validator uses remote titan - local titan can be managed independently
+export ARCH_TITAN_MODE=remote
+export ARCH_TITAN_ENDPOINT=https://titan-public-http.test.arch.network
+
+# These commands work regardless of ARCH_TITAN_MODE
+titan-up    # Starts local titan infrastructure
+titan-down  # Stops local titan infrastructure
+```
+
+**Key insight**: Distinguish between **infrastructure services** (bitcoin-up/titan-up) and **application configuration** (ARCH_* variables).
+
+### Executable Scripts (`bin/*-up`, `bin/*-down`, etc.)
+- **Observe global variables and flags** - read environment, accept CLI args
+- **RARELY provide defaults** - only for destructive actions (e.g. `--clobber`)
+- **Delegate to libraries with explicit parameters**
+- **Handle environment variable reading at script level**
+- **Example:**
+  ```bash
+  # Read environment (no defaults here)
+  data_dir="$DATA_DIR"
+  rpc_port="$RPC_BIND_PORT"
+  
+  # Validate required vars
+  if [[ -z "$data_dir" ]]; then
+      log_error "DATA_DIR environment variable required"
+      exit 1
+  fi
+  
+  # Call library with explicit parameters
+  update_validator_operator "$username" "$data_dir" "$rpc_port"
+  ```
+
+### Configuration Scripts (`.envrc` files)
+- **Driver for defaults** - primary place where sensible defaults are set
+- **Environment-specific values** - different per chain/network
+- **Use helper functions** (e.g. `select_by_mode`) for conditional logic
+- **Example:**
+  ```bash
+  # Set defaults at configuration level
+  export DATA_DIR="${DATA_DIR:-/home/$VALIDATOR_USER/data/.arch_data}"
+  export RPC_BIND_PORT="${RPC_BIND_PORT:-9002}"
+  export WEBSOCKET_ENABLED="${WEBSOCKET_ENABLED:-false}"
+  ```
+
+### User Override System (`.env` files - git ignored)
+- **Final override layer** - user-specific customizations
+- **Never committed to git** - local development/deployment tweaks
+- **Simple key=value format**
+- **Example:**
+  ```bash
+  WEBSOCKET_ENABLED=true
+  RPC_BIND_PORT=9003
+  ```
+
+## Layered Configuration System
+
+```
+.env (git ignored)           ← User overrides (highest priority)
+    ↓
+.envrc (tracked)             ← Defaults and environment logic  
+    ↓
+executable scripts (bin/)    ← Environment reading + validation
+    ↓  
+library functions (libs/)    ← Source-friendly, pure functions with explicit args
+```
+
+## Directory Structure
+
+```
+valops/
+├── .envrc                   # Project-wide PATH and env-lib sourcing
+├── .env                     # User overrides (git ignored)
+├── bin/                     # Executable scripts
+│   ├── validator-up         # Infrastructure management
+│   ├── validator-down       # Service teardown
+│   ├── validator-init       # Identity creation
+│   └── backup-all           # Backup utilities
+├── libs/                    # Source-friendly library functions only
+│   ├── validator-lib.sh     # Validator management functions
+│   ├── env-lib.sh           # Environment helper functions
+│   └── lib.sh               # Common utilities
+└── validators/              # Environment-specific configs
+    └── testnet/
+        └── .envrc           # Testnet defaults and overrides
+```
+
+## Anti-Patterns to Avoid
+
+### ❌ Globals in Libraries
+```bash
+# WRONG - library using globals
+function bad_library() {
+    local port="${RPC_BIND_PORT:-9002}"  # NO!
+}
+```
+
+### ❌ Defaults in Executables  
+```bash
+# WRONG - executable providing defaults
+data_dir="${DATA_DIR:-/default/path}"  # NO!
+```
+
+### ❌ Complex Logic in Executables
+```bash
+# WRONG - complex conditional logic in scripts
+if [[ "$NETWORK" == "testnet" ]]; then
+    endpoint="https://test.example.com"
+else
+    endpoint="https://prod.example.com" 
+fi
+```
+
+## Correct Patterns
+
+### ✅ Library Functions
+```bash
+# Parameters: username network_mode endpoint
+setup_network() {
+    local username="$1"
+    local network_mode="$2" 
+    local endpoint="$3"
+    
+    # Pure function - no globals, explicit params
+}
+```
+
+### ✅ Executable Scripts
+```bash
+# Read environment (validation only)
+username="$VALIDATOR_USER"
+network_mode="$NETWORK_MODE"
+endpoint="$TITAN_ENDPOINT"
+
+# Validate required
+if [[ -z "$username" ]]; then
+    log_error "VALIDATOR_USER required"
+    exit 1
+fi
+
+# Call library
+setup_network "$username" "$network_mode" "$endpoint"
+```
+
+### ✅ Configuration (.envrc)
+```bash
+# Provide sensible defaults
+export VALIDATOR_USER="${VALIDATOR_USER:-testnet-validator}"
+export NETWORK_MODE="${NETWORK_MODE:-testnet}"
+export ARCH_TITAN_ENDPOINT="${ARCH_TITAN_ENDPOINT:-$(select_by_mode $ARCH_TITAN_MODE \
+    "http://127.0.0.1:3030" \
+    "https://titan-public-http.test.arch.network")}"
+```
+
+## Benefits
+
+- **Predictable**: Clear data flow and responsibility boundaries
+- **Testable**: Pure library functions easy to unit test
+- **Maintainable**: Changes propagate correctly through layers
+- **Flexible**: Users can override at appropriate level
+- **Debuggable**: Easy to trace where values come from
+
+## Backup Safety Rule
+
+**🚨 CRITICAL SAFETY REQUIREMENT**: All init and startup scripts (`validator-init`, `validator-up`, etc.) MUST include auto-backup at the end using this exact pattern:
+
+```bash
+# Auto-backup after initialization/successful start
+"$PROJECT_ROOT/bin/backup-all"
+```
+
+**BACKUP FAILURES ARE NEVER ACCEPTABLE** - they indicate critical safety issues that must be fixed immediately. The backup must:
+- **NOT be silent** - should fail loudly if backup fails
+- **Use PROJECT_ROOT** - `$PROJECT_ROOT/bin/backup-all` for consistency
+- **Block script completion** - script fails if backup fails
+- **Always run** - even for minor operations, safety first 

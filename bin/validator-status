@@ -16,7 +16,8 @@
 #   validator-status --user testnet-validator
 #
 set -euo pipefail
-source "$(dirname "$0")/validator-lib.sh"
+source "$(dirname "$0")/../libs/lib.sh"
+source "$(dirname "$0")/../libs/validator-lib.sh"
 
 # Initialize from environment variable (can be overridden by flag)
 VALIDATOR_USER="${VALIDATOR_USER:-}"
@@ -115,7 +116,7 @@ fi
 echo "✓ Network: $NETWORK"
 
 # Check process status
-if is_validator_running "$VALIDATOR_USER"; then
+if is_systemd_service_running "arch-validator@$VALIDATOR_USER"; then
     echo "✓ Process: validator running"
 
     # Get process info

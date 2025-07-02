@@ -143,7 +143,3 @@ ensure_service_directories() {
         sudo -u "$username" mkdir -p "/home/$username/$dir"
     done
 }
-
-# Export standard paths
-export PROJECT_ROOT="$(project_root)"
-export SCRIPT_ROOT="$PROJECT_ROOT/scripts"

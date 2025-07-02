@@ -16,7 +16,7 @@
 #   bitcoin-status --user testnet-bitcoin
 #
 set -euo pipefail
-source "$(dirname "$0")/bitcoin-lib.sh"
+source "$(dirname "$0")/../libs/bitcoin-lib.sh"
 
 # Initialize from environment variable (can be overridden by flag)
 BITCOIN_USER="${BITCOIN_USER:-}"

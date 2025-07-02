@@ -21,7 +21,7 @@
 # - Reports summary of successful/failed backups
 #
 set -euo pipefail
-source "$(dirname "$0")/validator-lib.sh"
+source "$(dirname "$0")/../libs/validator-lib.sh"
 
 log_echo() {
     echo "backup-identities: $@"

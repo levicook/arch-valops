@@ -17,7 +17,7 @@
 #
 
 set -euo pipefail
-source "$(dirname "$0")/validator-lib.sh"
+source "$(dirname "$0")/../libs/validator-lib.sh"
 
 log_echo() {
     echo "validator-up: $@"
@@ -94,7 +94,26 @@ fi
 
 # Update configuration (generates environment file)
 log_echo "  Updating validator configuration..."
-update_validator_operator "$VALIDATOR_USER"
+
+# Read environment variables (no defaults - .envrc provides those)
+data_dir="$ARCH_DATA_DIR"
+rpc_bind_ip="$ARCH_RPC_BIND_IP"
+rpc_bind_port="$ARCH_RPC_BIND_PORT"
+titan_endpoint="$ARCH_TITAN_ENDPOINT"
+titan_socket_endpoint="$ARCH_TITAN_SOCKET_ENDPOINT"
+network_mode="$ARCH_NETWORK_MODE"
+websocket_enabled="$ARCH_WEBSOCKET_ENABLED"
+websocket_bind_ip="$ARCH_WEBSOCKET_BIND_IP"
+websocket_bind_port="$ARCH_WEBSOCKET_BIND_PORT"
+
+# Validate required environment variables
+if [[ -z "$data_dir" ]] || [[ -z "$network_mode" ]] || [[ -z "$titan_endpoint" ]]; then
+    log_echo "✗ Missing required environment variables. Ensure .envrc is sourced."
+    log_echo "  Required: ARCH_DATA_DIR, ARCH_NETWORK_MODE, ARCH_TITAN_ENDPOINT"
+    exit 1
+fi
+
+update_validator_operator "$VALIDATOR_USER" "$data_dir" "$rpc_bind_ip" "$rpc_bind_port" "$titan_endpoint" "$titan_socket_endpoint" "$network_mode" "$websocket_enabled" "$websocket_bind_ip" "$websocket_bind_port"
 
 # Install systemd service unit
 log_echo "  Installing systemd service unit..."
@@ -118,7 +137,8 @@ log_echo "🔍 VERIFY: Service health and connectivity"
 
 # Wait for service to be ready
 log_echo "  Waiting for validator to start..."
-if ! wait_for_service_ready "arch-validator@$VALIDATOR_USER" 30; then
+rpc_check="timeout 3 curl -s -f -X POST -H 'Content-Type: application/json' -d '{\"jsonrpc\":\"2.0\",\"method\":\"get_block_count\",\"id\":1}' http://127.0.0.1:$rpc_bind_port/"
+if ! wait_for_service_ready "arch-validator@$VALIDATOR_USER" "$rpc_check" 30; then
     log_echo "✗ Validator failed to start within 30 seconds"
     log_echo "  Check status: systemctl status arch-validator@$VALIDATOR_USER"
     log_echo "  Check logs: journalctl -u arch-validator@$VALIDATOR_USER -f"
@@ -131,7 +151,7 @@ countdown=15
 while [[ $countdown -gt 0 ]]; do
     if timeout 3 curl -s -X POST -H "Content-Type: application/json" \
         -d '{"jsonrpc":"2.0","method":"get_block_count","params":[],"id":1}' \
-        http://127.0.0.1:9002/ >/dev/null 2>&1; then
+        http://127.0.0.1:$rpc_bind_port/ >/dev/null 2>&1; then
         log_echo "✓ RPC endpoint responsive"
         break
     fi
@@ -158,4 +178,4 @@ log_echo "  Stop:   validator-down"
 # Auto-backup after successful start
 log_echo ""
 log_echo "# Auto-backup after successful start"
-"$SCRIPT_ROOT/backup-all"
+"$PROJECT_ROOT/bin/backup-all"

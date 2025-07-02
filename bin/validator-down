@@ -16,7 +16,7 @@
 #
 
 set -euo pipefail
-source "$(dirname "$0")/validator-lib.sh"
+source "$(dirname "$0")/../libs/validator-lib.sh"
 
 # Initialize from environment variable with default (can be overridden by flag)
 VALIDATOR_USER="${VALIDATOR_USER:-testnet-validator}"

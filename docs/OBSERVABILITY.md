@@ -80,7 +80,7 @@ The `lib.sh` library provides automation-friendly functions:
 
 ```bash
 # Source the library
-source scripts/lib.sh
+source libs/lib.sh
 
 # Set validator user for functions
 export VALIDATOR_USER=testnet-validator
@@ -163,7 +163,7 @@ While not built-in, you can expose metrics via RPC:
 # Custom Prometheus exporter script
 
 VALIDATOR_USER="testnet-validator"
-source /path/to/scripts/lib.sh
+source /path/to/libs/lib.sh
 
 # Export metrics in Prometheus format
 echo "# HELP validator_running Whether validator is running"
@@ -301,7 +301,7 @@ output {
 # health-check.sh - Basic validator health check
 
 VALIDATOR_USER="testnet-validator"
-source /path/to/scripts/lib.sh
+source /path/to/libs/lib.sh
 
 EXIT_CODE=0
 
@@ -390,7 +390,7 @@ fi
 # auto-restart.sh - Automatically restart failed validator
 
 VALIDATOR_USER="testnet-validator"
-source /path/to/scripts/lib.sh
+source /path/to/libs/lib.sh
 
 if ! is_validator_running "$VALIDATOR_USER"; then
     echo "$(date): Validator not running, attempting restart"
@@ -418,7 +418,7 @@ VALIDATOR_USER="testnet-validator"
 NEW_VERSION="v0.5.4"
 
 # Safety checks
-source /path/to/scripts/lib.sh
+source /path/to/libs/lib.sh
 
 # Check if validator is healthy before update
 if ! is_validator_running "$VALIDATOR_USER"; then

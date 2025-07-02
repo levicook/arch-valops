@@ -21,7 +21,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 generate_bitcoin_config() {
     local username="$1"
     local network_mode="$2"
-    local prune_size="$3"  # Optional: MB to keep, "0" or "false" for no pruning
+    local prune_size="$3" # Optional: MB to keep, "0" or "false" for no pruning
     local data_dir="/home/$username/data"
     local rpc_port="8332"
     local p2p_port="8333"
@@ -55,7 +55,7 @@ generate_bitcoin_config() {
         rpc_port="18443"
         p2p_port="18444"
         ;;
-    main|mainnet)
+    main | mainnet)
         bitcoin_chain="main"
         rpc_port="8332"
         p2p_port="8333"
@@ -92,13 +92,13 @@ discover=1
 
 # Disk space management
 $(if [[ -n "${prune_size:-}" && "${prune_size}" != "0" && "${prune_size}" != "false" ]]; then
-    echo "prune=${prune_size}  # Keep ~${prune_size}MB of recent blocks"
-fi)
+        echo "prune=${prune_size}  # Keep ~${prune_size}MB of recent blocks"
+    fi)
 
 # Network-specific settings
 $(if [ "$bitcoin_chain" != "main" ]; then
-    echo "[$bitcoin_chain]"
-fi)
+        echo "[$bitcoin_chain]"
+    fi)
 rpcbind=127.0.0.1
 rpcport=$rpc_port
 rpcuser=$rpc_user
@@ -133,10 +133,10 @@ ensure_bitcoin_p2p_enabled() {
     signet)
         p2p_port="38333"
         ;;
-    regtest|devnet)
+    regtest | devnet)
         p2p_port="18444"
         ;;
-    main|mainnet)
+    main | mainnet)
         p2p_port="8333"
         ;;
     esac
