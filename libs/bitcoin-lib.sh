@@ -22,7 +22,14 @@ generate_bitcoin_config() {
     local username="$1"
     local network_mode="$2"
     local prune_size="$3" # Optional: MB to keep, "0" or "false" for no pruning
-    local data_dir="/home/$username/data"
+    local data_dir="$4"   # Required: data directory path
+
+    # Validate required parameters
+    if [[ -z "$data_dir" ]]; then
+        log_error "data_dir parameter is required"
+        return 1
+    fi
+
     local rpc_port="8332"
     local p2p_port="8333"
 
@@ -81,6 +88,7 @@ datadir=$data_dir
 
 # Global settings
 server=1
+txindex=1
 dbcache=512
 maxconnections=125
 maxuploadtarget=0
@@ -207,4 +215,289 @@ apply_knots_banlist() {
     else
         log_echo "⚠ curl not available, cannot download Bitcoin Knots banlist"
     fi
+}
+
+# Check if Bitcoin service is running via systemd
+# Parameters: username
+is_bitcoin_running() {
+    local username="$1"
+    is_systemd_service_running "arch-bitcoind@${username}.service"
+}
+
+# Get Bitcoin systemd service information
+# Parameters: username
+# Returns: JSON with service status, memory, uptime, start time
+get_bitcoin_service_info() {
+    local username="$1"
+    local service_name="arch-bitcoind@${username}.service"
+
+    # Check if service is running
+    if ! is_systemd_service_running "$service_name"; then
+        echo '{"running": false}'
+        return 1
+    fi
+
+    # Get service properties
+    local service_status memory_info
+    service_status=$(systemctl show "$service_name" --property=ActiveEnterTimestamp 2>/dev/null)
+    memory_info=$(systemctl show "$service_name" --property=MemoryCurrent,MemoryPeak 2>/dev/null)
+
+    local start_time memory_current memory_peak
+    start_time=$(echo "$service_status" | cut -d= -f2)
+    memory_current=$(echo "$memory_info" | grep MemoryCurrent | cut -d= -f2)
+    memory_peak=$(echo "$memory_info" | grep MemoryPeak | cut -d= -f2)
+
+    # Build JSON response
+    local json='{"running": true'
+    if [[ -n "$start_time" && "$start_time" != "0" ]]; then
+        json+=', "start_time": "'$start_time'"'
+    fi
+    if [[ -n "$memory_current" && "$memory_current" != "0" ]]; then
+        json+=', "memory_current": '$memory_current
+    fi
+    if [[ -n "$memory_peak" && "$memory_peak" != "0" ]]; then
+        json+=', "memory_peak": '$memory_peak
+    fi
+    json+='}'
+
+    echo "$json"
+}
+
+# Get Bitcoin blockchain information via RPC using curl
+# Parameters: username
+# Returns: JSON with blockchain data or error status
+get_bitcoin_blockchain_info() {
+    local username="$1"
+
+    # Validate required parameters
+    if [[ -z "$username" ]]; then
+        echo '{"error": "missing_username"}'
+        return 1
+    fi
+
+    # Get blockchain info
+    local rpc_data
+    rpc_data=$(bitcoin_rpc_call "getblockchaininfo")
+
+    if [[ "$(echo "$rpc_data" | jq -r '.error // empty')" ]]; then
+        echo "$rpc_data"
+        return 1
+    fi
+
+    # Extract the result from JSON-RPC response
+    local blockchain_info
+    blockchain_info=$(echo "$rpc_data" | jq -r '.result // empty')
+
+    if [[ -z "$blockchain_info" || "$blockchain_info" == "null" ]]; then
+        echo '{"error": "no_result_in_response"}'
+        return 1
+    fi
+
+    # Get daemon uptime and merge with blockchain info
+    local uptime_data
+    uptime_data=$(bitcoin_rpc_call "uptime")
+
+    if [[ "$(echo "$uptime_data" | jq -r '.error // empty')" ]]; then
+        # Uptime failed, but blockchain info succeeded - return with uptime=0
+        echo "$blockchain_info" | jq '. + {uptime: 0}'
+    else
+        # Merge uptime into blockchain info
+        local uptime_seconds
+        uptime_seconds=$(echo "$uptime_data" | jq -r '.result // 0')
+        echo "$blockchain_info" | jq --arg uptime "$uptime_seconds" '. + {uptime: ($uptime | tonumber)}'
+    fi
+}
+
+# Get Bitcoin network connection information via RPC using curl
+# Parameters: username
+# Returns: JSON with network connection data
+get_bitcoin_network_info() {
+    local username="$1"
+
+    # Validate required parameters
+    if [[ -z "$username" ]]; then
+        echo '{"error": "missing_username"}'
+        return 1
+    fi
+
+    # Get connection count
+    local connection_data
+    connection_data=$(bitcoin_rpc_call "getconnectioncount")
+
+    if [[ "$(echo "$connection_data" | jq -r '.error // empty')" ]]; then
+        echo "$connection_data"
+        return 1
+    fi
+
+    local connection_count
+    connection_count=$(echo "$connection_data" | jq -r '.result // 0')
+
+    # Get peer details
+    local peer_data
+    peer_data=$(bitcoin_rpc_call "getpeerinfo")
+
+    if [[ "$(echo "$peer_data" | jq -r '.error // empty')" ]]; then
+        echo "{\"total_peers\": $connection_count, \"error\": \"peer_info_failed\"}"
+        return 1
+    fi
+
+    # Parse peer information - extract result from JSON-RPC response
+    local peer_info
+    peer_info=$(echo "$peer_data" | jq '.result // []')
+
+    local inbound_peers outbound_peers full_relay block_relay
+    inbound_peers=$(echo "$peer_info" | jq '[.[] | select(.inbound == true)] | length' 2>/dev/null || echo "0")
+    outbound_peers=$(echo "$peer_info" | jq '[.[] | select(.inbound == false)] | length' 2>/dev/null || echo "0")
+    full_relay=$(echo "$peer_info" | jq '[.[] | select(.connection_type == "outbound-full-relay")] | length' 2>/dev/null || echo "0")
+    block_relay=$(echo "$peer_info" | jq '[.[] | select(.connection_type == "block-relay-only")] | length' 2>/dev/null || echo "0")
+
+    # Build JSON response
+    echo "{
+        \"total_peers\": $connection_count,
+        \"inbound_peers\": $inbound_peers,
+        \"outbound_peers\": $outbound_peers,
+        \"full_relay\": $full_relay,
+        \"block_relay\": $block_relay
+    }"
+}
+
+# Get Bitcoin network topology information (ports, firewall)
+# Parameters: username network_mode
+# Returns: JSON with topology data
+get_bitcoin_topology_info() {
+    local username="$1"
+    local network_mode="$2"
+
+    # Determine expected p2p port based on network
+    local p2p_port="8333"
+    case "$network_mode" in
+    testnet) p2p_port="18333" ;;
+    testnet4) p2p_port="48333" ;;
+    signet) p2p_port="38333" ;;
+    regtest | devnet) p2p_port="18444" ;;
+    *) p2p_port="8333" ;;
+    esac
+
+    # Check if listening
+    local listening="false"
+    if sudo ss -tlnp | grep ":$p2p_port " >/dev/null 2>&1; then
+        listening="true"
+    fi
+
+    # Check firewall status
+    local firewall_status="unknown"
+    local firewall_description=""
+
+    if command -v ufw >/dev/null 2>&1; then
+        local ufw_port_rule
+        ufw_port_rule=$(sudo ufw status 2>/dev/null | grep "$p2p_port" || echo "")
+
+        if [[ -n "$ufw_port_rule" ]]; then
+            firewall_status="allowed"
+            firewall_description="Port $p2p_port explicitly allowed"
+        else
+            local ufw_default
+            ufw_default=$(sudo ufw status verbose 2>/dev/null | grep "Default:" | grep "deny (incoming)" || echo "")
+            if [[ -n "$ufw_default" ]]; then
+                firewall_status="blocked"
+                firewall_description="Port $p2p_port blocked by default policy"
+            else
+                firewall_status="unknown"
+                firewall_description="Firewall status unclear"
+            fi
+        fi
+    else
+        firewall_description="UFW not available"
+    fi
+
+    # Build JSON response
+    echo "{
+        \"p2p_port\": $p2p_port,
+        \"listening\": $listening,
+        \"firewall_status\": \"$firewall_status\",
+        \"firewall_description\": \"$firewall_description\"
+    }"
+}
+
+# Make a Bitcoin RPC call using curl and environment variables
+# Parameters: rpc_method [rpc_params...]
+# Returns: JSON-RPC response or error
+bitcoin_rpc_call() {
+    local rpc_method="$1"
+    shift
+    local rpc_params=("$@")
+
+    # Use environment variables for credentials and network
+    local rpc_user="${BITCOIN_RPC_USER:-bitcoin}"
+    local rpc_password="${BITCOIN_RPC_PASSWORD:-}"
+    local network_mode="${BITCOIN_NETWORK_MODE:-mainnet}"
+
+    if [[ -z "$rpc_password" ]]; then
+        echo '{"error": "missing_rpc_password"}'
+        return 1
+    fi
+
+    # Determine RPC port based on network mode
+    local rpc_port
+    case "$network_mode" in
+    mainnet | main)
+        rpc_port="8332"
+        ;;
+    testnet)
+        rpc_port="18332"
+        ;;
+    testnet4)
+        rpc_port="48332"
+        ;;
+    signet)
+        rpc_port="38332"
+        ;;
+    regtest | devnet)
+        rpc_port="18443"
+        ;;
+    *)
+        echo '{"error": "unknown_network_mode"}'
+        return 1
+        ;;
+    esac
+
+    local rpc_url="http://127.0.0.1:$rpc_port"
+
+    # Build JSON-RPC request
+    local request_id=$(date +%s)
+    local rpc_request
+    if [[ ${#rpc_params[@]} -eq 0 ]]; then
+        rpc_request=$(jq -n --arg method "$rpc_method" --arg id "$request_id" '{
+            jsonrpc: "2.0",
+            method: $method,
+            params: [],
+            id: $id
+        }')
+    else
+        rpc_request=$(jq -n --arg method "$rpc_method" --arg id "$request_id" --argjson params "$(printf '%s\n' "${rpc_params[@]}" | jq -R . | jq -s .)" '{
+            jsonrpc: "2.0", 
+            method: $method,
+            params: $params,
+            id: $id
+        }')
+    fi
+
+    # Make curl request with reasonable timeout
+    local response
+    if response=$(curl -s --max-time 5 \
+        -H "Content-Type: application/json" \
+        -u "$rpc_user:$rpc_password" \
+        -d "$rpc_request" \
+        "$rpc_url" 2>/dev/null); then
+
+        # Check if response is valid JSON and doesn't contain connection errors
+        if echo "$response" | jq -e '.result // .error' >/dev/null 2>&1; then
+            echo "$response"
+            return 0
+        fi
+    fi
+
+    # RPC call failed
+    echo '{"error": "rpc_failed"}'
+    return 1
 }

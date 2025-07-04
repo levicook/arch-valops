@@ -56,6 +56,30 @@ generate_titan_env() {
         return 1
     fi
 
+    # Determine Bitcoin RPC URL based on network mode
+    local bitcoin_rpc_url
+    case "$network_mode" in
+    mainnet | main)
+        bitcoin_rpc_url="http://127.0.0.1:8332"
+        ;;
+    testnet)
+        bitcoin_rpc_url="http://127.0.0.1:18332"
+        ;;
+    testnet4)
+        bitcoin_rpc_url="http://127.0.0.1:48332"
+        ;;
+    signet)
+        bitcoin_rpc_url="http://127.0.0.1:38332"
+        ;;
+    regtest | devnet)
+        bitcoin_rpc_url="http://127.0.0.1:18443"
+        ;;
+    *)
+        log_error "Unknown network mode: $network_mode"
+        return 1
+        ;;
+    esac
+
     # Generate systemd environment file
     cat <<EOF
 # Titan environment file for systemd
@@ -63,6 +87,7 @@ generate_titan_env() {
 
 BITCOIN_RPC_USER=$rpc_user
 BITCOIN_RPC_PASSWORD=$rpc_password
+BITCOIN_RPC_URL=$bitcoin_rpc_url
 TITAN_NETWORK_MODE=$titan_chain
 EOF
 }
@@ -106,4 +131,221 @@ ensure_titan_api_enabled() {
     else
         log_echo "✓ UFW not active, no API firewall configuration needed"
     fi
+}
+
+# Get Titan service information via systemd
+# Parameters: username
+# Returns: JSON with service status, memory, uptime, start time
+get_titan_service_info() {
+    local username="$1"
+    local service_name="arch-titan@${username}.service"
+
+    # Check if service is running
+    if ! is_systemd_service_running "$service_name"; then
+        echo '{"running": false}'
+        return 1
+    fi
+
+    # Get service properties
+    local service_status memory_info
+    service_status=$(systemctl show "$service_name" --property=ActiveEnterTimestamp 2>/dev/null)
+    memory_info=$(systemctl show "$service_name" --property=MemoryCurrent,MemoryPeak 2>/dev/null)
+
+    local start_time memory_current memory_peak
+    start_time=$(echo "$service_status" | cut -d= -f2)
+    memory_current=$(echo "$memory_info" | grep MemoryCurrent | cut -d= -f2)
+    memory_peak=$(echo "$memory_info" | grep MemoryPeak | cut -d= -f2)
+
+    # Build JSON response
+    local json='{"running": true'
+    if [[ -n "$start_time" && "$start_time" != "0" ]]; then
+        json+=', "start_time": "'$start_time'"'
+    fi
+    if [[ -n "$memory_current" && "$memory_current" != "0" ]]; then
+        json+=', "memory_current": '$memory_current
+    fi
+    if [[ -n "$memory_peak" && "$memory_peak" != "0" ]]; then
+        json+=', "memory_peak": '$memory_peak
+    fi
+    json+='}'
+
+    echo "$json"
+}
+
+# Get Titan indexer status via HTTP API
+# Parameters: username
+# Returns: JSON with indexer status or error
+get_titan_indexer_status() {
+    local username="$1"
+
+    # Validate required parameters
+    if [[ -z "$username" ]]; then
+        echo '{"error": "missing_username"}'
+        return 1
+    fi
+
+    # Make API call to /status endpoint
+    local api_response
+    api_response=$(titan_api_call "status")
+
+    if [[ "$(echo "$api_response" | jq -r '.error // empty')" ]]; then
+        echo "$api_response"
+        return 1
+    fi
+
+    echo "$api_response"
+}
+
+# Get Titan current tip via HTTP API
+# Parameters: username
+# Returns: JSON with current tip or error
+get_titan_tip() {
+    local username="$1"
+
+    # Validate required parameters
+    if [[ -z "$username" ]]; then
+        echo '{"error": "missing_username"}'
+        return 1
+    fi
+
+    # Make API call to /tip endpoint
+    local api_response
+    api_response=$(titan_api_call "tip")
+
+    if [[ "$(echo "$api_response" | jq -r '.error // empty')" ]]; then
+        echo "$api_response"
+        return 1
+    fi
+
+    echo "$api_response"
+}
+
+# Get Titan runes summary via HTTP API
+# Parameters: username
+# Returns: JSON with runes data or error
+get_titan_runes_summary() {
+    local username="$1"
+
+    # Validate required parameters
+    if [[ -z "$username" ]]; then
+        echo '{"error": "missing_username"}'
+        return 1
+    fi
+
+    # Make API call to /runes endpoint
+    local api_response
+    api_response=$(titan_api_call "runes")
+
+    if [[ "$(echo "$api_response" | jq -r '.error // empty')" ]]; then
+        echo "$api_response"
+        return 1
+    fi
+
+    echo "$api_response"
+}
+
+# Make a Titan HTTP API call using curl
+# Parameters: endpoint [curl_args...]
+# Returns: JSON response or error
+titan_api_call() {
+    local endpoint="$1"
+    shift
+    local curl_args=("$@")
+
+    # Default API base URL
+    local api_url="http://127.0.0.1:3030"
+
+    # Build full URL
+    local full_url="$api_url/$endpoint"
+
+    # Make curl request with reasonable timeout
+    local response
+    if response=$(curl -s --max-time 5 \
+        -H "Content-Type: application/json" \
+        "${curl_args[@]}" \
+        "$full_url" 2>/dev/null); then
+
+        # Check if response is valid JSON
+        if echo "$response" | jq -e '.' >/dev/null 2>&1; then
+            echo "$response"
+            return 0
+        elif [[ -n "$response" ]]; then
+            # Non-JSON response, wrap it
+            echo "{\"raw_response\": \"$response\"}"
+            return 0
+        fi
+    fi
+
+    # API call failed
+    echo '{"error": "api_failed"}'
+    return 1
+}
+
+# Get Titan sync progress compared to Bitcoin
+# Parameters: username
+# Returns: JSON with sync comparison or error
+get_titan_sync_progress() {
+    local username="$1"
+
+    # Get Titan current height
+    local titan_tip
+    titan_tip=$(get_titan_tip "$username")
+
+    if [[ "$(echo "$titan_tip" | jq -r '.error // empty')" ]]; then
+        echo "$titan_tip"
+        return 1
+    fi
+
+    local titan_height
+    titan_height=$(echo "$titan_tip" | jq -r '.height // 0')
+
+    # Get Bitcoin current height using our existing bitcoin functions
+    # We need to ensure we're checking the right Bitcoin instance
+    local bitcoin_user="${BITCOIN_USER:-}"
+    if [[ -z "$bitcoin_user" ]]; then
+        echo '{"error": "missing_bitcoin_user"}'
+        return 1
+    fi
+
+    local bitcoin_info
+    bitcoin_info=$(get_bitcoin_blockchain_info "$bitcoin_user" 2>/dev/null)
+
+    if [[ "$(echo "$bitcoin_info" | jq -r '.error // empty')" ]]; then
+        # Bitcoin info failed, just return Titan info
+        echo "{\"titan_height\": $titan_height, \"sync_status\": \"unknown\", \"error\": \"bitcoin_unavailable\"}"
+        return 0
+    fi
+
+    local bitcoin_height
+    bitcoin_height=$(echo "$bitcoin_info" | jq -r '.blocks // 0')
+
+    # Calculate sync progress
+    local sync_progress="unknown"
+    local blocks_behind=0
+
+    if [[ "$bitcoin_height" -gt 0 && "$titan_height" -gt 0 ]]; then
+        blocks_behind=$((bitcoin_height - titan_height))
+        if [[ "$blocks_behind" -le 0 ]]; then
+            sync_progress="synced"
+        elif [[ "$blocks_behind" -le 10 ]]; then
+            sync_progress="catching_up"
+        else
+            sync_progress="behind"
+        fi
+    fi
+
+    # Build response
+    echo "{
+        \"titan_height\": $titan_height,
+        \"bitcoin_height\": $bitcoin_height,
+        \"blocks_behind\": $blocks_behind,
+        \"sync_status\": \"$sync_progress\"
+    }"
+}
+
+# Check if Titan service is running via systemd
+# Parameters: username
+is_titan_running() {
+    local username="$1"
+    is_systemd_service_running "arch-titan@${username}.service"
 }
