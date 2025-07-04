@@ -1,0 +1,259 @@
+#!/bin/bash
+#
+# titan-status - Comprehensive Titan Rune Indexer status check
+#
+# Shows detailed status of Titan indexer:
+# - User existence and configuration
+# - Process status and resource usage
+# - API connectivity and indexer status
+# - Sync progress compared to Bitcoin
+# - Rune indexing statistics
+# - Network configuration verification
+#
+# Usage:
+#   # Environment variable (recommended):
+#   TITAN_USER=testnet-titan titan-status
+#
+#   # Or traditional flag (backward compatibility):
+#   titan-status --user testnet-titan
+#
+set -euo pipefail
+source "$(dirname "$0")/../libs/titan-lib.sh"
+source "$(dirname "$0")/../libs/bitcoin-lib.sh"
+
+# Show usage information
+show_usage() {
+    echo "Usage: titan-status [options]"
+    echo ""
+    echo "Environment Variable (recommended):"
+    echo "  TITAN_USER                       Titan user to check"
+    echo ""
+    echo "Options (override environment variable):"
+    echo "  --user <username>                Titan user to check"
+    echo "  -h, --help                       Show this help"
+    echo ""
+    echo "Examples:"
+    echo "  # Using environment variable (recommended):"
+    echo "  TITAN_USER=testnet-titan titan-status"
+    echo ""
+    echo "  # Using flag (backward compatibility):"
+    echo "  titan-status --user testnet-titan"
+}
+
+# Initialize from environment variable (can be overridden by flag)
+TITAN_USER="${TITAN_USER:-}"
+
+# Parse command line arguments (override environment variable)
+while [[ $# -gt 0 ]]; do
+    case $1 in
+    --user)
+        TITAN_USER="$2"
+        shift 2
+        ;;
+    -h | --help)
+        show_usage
+        exit 0
+        ;;
+    *)
+        echo "titan-status: Unknown option: $1"
+        echo ""
+        show_usage
+        exit 1
+        ;;
+    esac
+done
+
+# Validate arguments
+if [[ -z "$TITAN_USER" ]]; then
+    echo "titan-status: ERROR: TITAN_USER environment variable or --user flag is required"
+    echo ""
+    show_usage
+    exit 1
+fi
+
+# Helper function to format bytes to GB
+format_bytes_to_gb() {
+    local bytes="$1"
+    if [[ "$bytes" == "0" || -z "$bytes" ]]; then
+        echo "0"
+    else
+        echo "scale=1; $bytes / 1024 / 1024 / 1024" | bc -l 2>/dev/null || echo "unknown"
+    fi
+}
+
+echo "🔍 Titan Status: $TITAN_USER"
+echo "════════════════════════════════════"
+
+# Check user existence
+if id "$TITAN_USER" &>/dev/null; then
+    echo "✓ User: $TITAN_USER exists"
+    USER_HOME=$(eval echo "~$TITAN_USER")
+    ENV_FILE="$USER_HOME/titan.env"
+
+    if sudo test -f "$ENV_FILE"; then
+        echo "✓ Config: $ENV_FILE found"
+    else
+        echo "✗ Config: $ENV_FILE not found"
+    fi
+else
+    echo "✗ User: $TITAN_USER does not exist"
+    echo "💡 Run: titan-up to create"
+    exit 1
+fi
+
+# Show intended network from environment
+INTENDED_NETWORK="${TITAN_NETWORK_MODE:-unknown}"
+echo "✓ Network: $INTENDED_NETWORK (configured)"
+
+# Get service information using library function
+SERVICE_INFO=$(get_titan_service_info "$TITAN_USER")
+SERVICE_RUNNING=$(echo "$SERVICE_INFO" | jq -r '.running // false')
+
+if [[ "$SERVICE_RUNNING" == "true" ]]; then
+    echo "✓ Process: titan running"
+    echo "✓ Service: arch-titan@$TITAN_USER.service active"
+
+    # Show service details
+    START_TIME=$(echo "$SERVICE_INFO" | jq -r '.start_time // empty')
+    if [[ -n "$START_TIME" && "$START_TIME" != "null" ]]; then
+        echo "  Started: $START_TIME"
+    fi
+
+    MEMORY_CURRENT=$(echo "$SERVICE_INFO" | jq -r '.memory_current // 0')
+    MEMORY_PEAK=$(echo "$SERVICE_INFO" | jq -r '.memory_peak // 0')
+
+    if [[ "$MEMORY_CURRENT" != "0" ]]; then
+        CURRENT_GB=$(format_bytes_to_gb "$MEMORY_CURRENT")
+        echo "  Memory: ${CURRENT_GB}GB current"
+    fi
+
+    if [[ "$MEMORY_PEAK" != "0" ]]; then
+        PEAK_GB=$(format_bytes_to_gb "$MEMORY_PEAK")
+        echo "  Peak: ${PEAK_GB}GB"
+    fi
+else
+    echo "✗ Process: titan not running"
+    echo "✗ Service: arch-titan@$TITAN_USER.service inactive"
+    echo "💡 Run: titan-up to start"
+    exit 1
+fi
+
+# Test API connectivity
+echo "✓ API: Testing connectivity..."
+
+# Get indexer status using library function
+INDEXER_STATUS=$(get_titan_indexer_status "$TITAN_USER")
+INDEXER_ERROR=$(echo "$INDEXER_STATUS" | jq -r '.error // empty')
+
+if [[ -z "$INDEXER_ERROR" ]]; then
+    echo "✓ API: Connectivity verified"
+
+    echo ""
+    echo "📊 Indexer Status:"
+
+    # Extract indexer data
+    BLOCK_TIP=$(echo "$INDEXER_STATUS" | jq -r '.block_tip // {}')
+    CURRENT_HEIGHT=$(echo "$BLOCK_TIP" | jq -r '.height // "unknown"')
+    CURRENT_HASH=$(echo "$BLOCK_TIP" | jq -r '.hash // "unknown"')
+    RUNES_COUNT=$(echo "$INDEXER_STATUS" | jq -r '.runes_count // 0')
+    MEMPOOL_TX_COUNT=$(echo "$INDEXER_STATUS" | jq -r '.mempool_tx_count // 0')
+
+    echo "  Current height: $CURRENT_HEIGHT"
+    echo "  Current hash: ${CURRENT_HASH:0:16}...${CURRENT_HASH: -4}"
+    echo "  Runes indexed: $RUNES_COUNT"
+    echo "  Mempool transactions: $MEMPOOL_TX_COUNT"
+
+    # Get sync progress compared to Bitcoin
+    SYNC_PROGRESS=$(get_titan_sync_progress "$TITAN_USER")
+    SYNC_ERROR=$(echo "$SYNC_PROGRESS" | jq -r '.error // empty')
+
+    if [[ -z "$SYNC_ERROR" ]]; then
+        echo ""
+        echo "🔄 Sync Progress:"
+
+        TITAN_HEIGHT=$(echo "$SYNC_PROGRESS" | jq -r '.titan_height // 0')
+        BITCOIN_HEIGHT=$(echo "$SYNC_PROGRESS" | jq -r '.bitcoin_height // 0')
+        BLOCKS_BEHIND=$(echo "$SYNC_PROGRESS" | jq -r '.blocks_behind // 0')
+        SYNC_STATUS=$(echo "$SYNC_PROGRESS" | jq -r '.sync_status // "unknown"')
+
+        echo "  Titan height: $TITAN_HEIGHT"
+        echo "  Bitcoin height: $BITCOIN_HEIGHT"
+
+        case "$SYNC_STATUS" in
+        synced)
+            echo "✓ Status: Fully synchronized"
+            ;;
+        catching_up)
+            echo "⏳ Status: Catching up ($BLOCKS_BEHIND blocks behind)"
+            ;;
+        behind)
+            echo "⏳ Status: Syncing ($BLOCKS_BEHIND blocks behind)"
+            ;;
+        *)
+            echo "? Status: $SYNC_STATUS"
+            ;;
+        esac
+    else
+        if [[ "$SYNC_ERROR" == "bitcoin_unavailable" ]]; then
+            echo ""
+            echo "⚠ Sync Progress: Bitcoin status unavailable"
+            echo "  Titan height: $CURRENT_HEIGHT"
+        else
+            echo ""
+            echo "⚠ Sync Progress: Unable to determine ($SYNC_ERROR)"
+        fi
+    fi
+
+    # Get runes summary
+    RUNES_SUMMARY=$(get_titan_runes_summary "$TITAN_USER")
+    RUNES_ERROR=$(echo "$RUNES_SUMMARY" | jq -r '.error // empty')
+
+    if [[ -z "$RUNES_ERROR" ]]; then
+        echo ""
+        echo "🎯 Runes Summary:"
+
+        RUNES_ITEMS=$(echo "$RUNES_SUMMARY" | jq -r '.items // []')
+        RUNES_OFFSET=$(echo "$RUNES_SUMMARY" | jq -r '.offset // 0')
+        RUNES_ARRAY_LENGTH=$(echo "$RUNES_ITEMS" | jq 'length')
+
+        echo "  Total indexed: $RUNES_COUNT"
+        echo "  Recent items: $RUNES_ARRAY_LENGTH (offset: $RUNES_OFFSET)"
+
+        if [[ "$RUNES_ARRAY_LENGTH" -gt 0 ]]; then
+            echo "  Latest runes:"
+            echo "$RUNES_ITEMS" | jq -r '.[] | "    - " + (.name // "unnamed") + " (block " + (.block_height | tostring) + ")"' | head -3
+        else
+            echo "  No runes found (normal for early blocks)"
+        fi
+    fi
+
+    # Verify network configuration matches
+    if [[ "$INTENDED_NETWORK" != "unknown" ]]; then
+        # We could potentially verify this by checking the genesis block hash
+        # or other network-specific markers, but for now just show configured network
+        echo ""
+        echo "🌐 Network Configuration:"
+        echo "  Configured: $INTENDED_NETWORK"
+        echo "  API endpoint: http://127.0.0.1:3030"
+
+        # Show environment file configuration
+        if [[ -f "$ENV_FILE" ]]; then
+            BITCOIN_RPC_URL=$(sudo grep "BITCOIN_RPC_URL" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2 || echo "not found")
+            echo "  Bitcoin RPC: $BITCOIN_RPC_URL"
+        fi
+    fi
+
+else
+    echo "✗ API: Connection failed ($INDEXER_ERROR)"
+    echo "  Check titan.env configuration"
+    echo "  Ensure Titan service is fully started"
+    echo "  Verify Bitcoin RPC connectivity"
+fi
+
+echo ""
+echo "════════════════════════════════════"
+echo "📋 Management Commands:"
+echo "  Status: systemctl status arch-titan@$TITAN_USER"
+echo "  Logs: journalctl -u arch-titan@$TITAN_USER -f"
+echo "  API: curl http://127.0.0.1:3030/status | jq"
+echo "  Restart: titan-down && titan-up"

@@ -1,12 +1,14 @@
 #!/bin/bash
 #
-# bitcoin-status - Quick Bitcoin operator status check
+# bitcoin-status - Comprehensive Bitcoin operator status check
 #
-# Shows current status of Bitcoin operator:
+# Shows detailed status of Bitcoin operator:
 # - User existence and configuration
-# - Process status
+# - Process status and resource usage
 # - Network connectivity and sync status
-# - RPC connectivity
+# - RPC connectivity and blockchain info
+# - Peer connections and network topology
+# - Disk usage and pruning status
 #
 # Usage:
 #   # Environment variable (recommended):
@@ -17,6 +19,25 @@
 #
 set -euo pipefail
 source "$(dirname "$0")/../libs/bitcoin-lib.sh"
+
+# Show usage information
+show_usage() {
+    echo "Usage: bitcoin-status [options]"
+    echo ""
+    echo "Environment Variable (recommended):"
+    echo "  BITCOIN_USER                     Bitcoin user to check"
+    echo ""
+    echo "Options (override environment variable):"
+    echo "  --user <username>                Bitcoin user to check"
+    echo "  -h, --help                       Show this help"
+    echo ""
+    echo "Examples:"
+    echo "  # Using environment variable (recommended):"
+    echo "  BITCOIN_USER=testnet-bitcoin bitcoin-status"
+    echo ""
+    echo "  # Using flag (backward compatibility):"
+    echo "  bitcoin-status --user testnet-bitcoin"
+}
 
 # Initialize from environment variable (can be overridden by flag)
 BITCOIN_USER="${BITCOIN_USER:-}"
@@ -29,26 +50,13 @@ while [[ $# -gt 0 ]]; do
         shift 2
         ;;
     -h | --help)
-        echo "Usage: bitcoin-status [options]"
-        echo ""
-        echo "Environment Variable (recommended):"
-        echo "  BITCOIN_USER                     Bitcoin user to check"
-        echo ""
-        echo "Options (override environment variable):"
-        echo "  --user <username>                Bitcoin user to check"
-        echo "  -h, --help                       Show this help"
-        echo ""
-        echo "Examples:"
-        echo "  # Using environment variable (recommended):"
-        echo "  BITCOIN_USER=testnet-bitcoin bitcoin-status"
-        echo ""
-        echo "  # Using flag (backward compatibility):"
-        echo "  bitcoin-status --user testnet-bitcoin"
+        show_usage
         exit 0
         ;;
     *)
         echo "bitcoin-status: Unknown option: $1"
-        echo "bitcoin-status: Use --help for usage information"
+        echo ""
+        show_usage
         exit 1
         ;;
     esac
@@ -57,10 +65,30 @@ done
 # Validate arguments
 if [[ -z "$BITCOIN_USER" ]]; then
     echo "bitcoin-status: ERROR: BITCOIN_USER environment variable or --user flag is required"
-    echo "Usage: BITCOIN_USER=testnet-bitcoin bitcoin-status"
-    echo "   or: bitcoin-status --user testnet-bitcoin"
+    echo ""
+    show_usage
     exit 1
 fi
+
+# Helper function to format bytes to GB
+format_bytes_to_gb() {
+    local bytes="$1"
+    if [[ "$bytes" == "0" || -z "$bytes" ]]; then
+        echo "0"
+    else
+        echo "scale=1; $bytes / 1024 / 1024 / 1024" | bc -l 2>/dev/null || echo "unknown"
+    fi
+}
+
+# Helper function to format uptime seconds to hours
+format_uptime_to_hours() {
+    local seconds="$1"
+    if [[ "$seconds" == "0" || -z "$seconds" ]]; then
+        echo "0"
+    else
+        echo "scale=1; $seconds / 3600" | bc -l 2>/dev/null || echo "unknown"
+    fi
+}
 
 echo "🔍 Bitcoin Status: $BITCOIN_USER"
 echo "═══════════════════════════════════"
@@ -86,31 +114,86 @@ fi
 INTENDED_NETWORK="${BITCOIN_NETWORK_MODE:-unknown}"
 echo "✓ Network: $INTENDED_NETWORK (configured)"
 
-# Check process status
-if is_bitcoin_running "$BITCOIN_USER"; then
-    echo "✓ Process: bitcoind running"
+# Get service information using library function
+SERVICE_INFO=$(get_bitcoin_service_info "$BITCOIN_USER")
+SERVICE_RUNNING=$(echo "$SERVICE_INFO" | jq -r '.running // false')
 
-    # Get process info
-    BITCOIN_PID=$(pgrep -f "^bitcoind -conf.*$BITCOIN_USER" | head -1)
-    if [[ -n "$BITCOIN_PID" ]]; then
-        echo "  PID: $BITCOIN_PID"
+if [[ "$SERVICE_RUNNING" == "true" ]]; then
+    echo "✓ Process: bitcoind running"
+    echo "✓ Service: arch-bitcoind@${BITCOIN_USER}.service active"
+
+    # Display service details
+    START_TIME=$(echo "$SERVICE_INFO" | jq -r '.start_time // empty')
+    if [[ -n "$START_TIME" ]]; then
+        echo "  Started: $START_TIME"
     fi
 
-    # Check RPC connectivity and get info
-    if [[ -n "${BITCOIN_RPC_USER:-}" ]] && [[ -n "${BITCOIN_RPC_PASSWORD:-}" ]]; then
+    MEMORY_CURRENT=$(echo "$SERVICE_INFO" | jq -r '.memory_current // empty')
+    if [[ -n "$MEMORY_CURRENT" ]]; then
+        MEMORY_GB=$(format_bytes_to_gb "$MEMORY_CURRENT")
+        echo "  Memory: ${MEMORY_GB}GB current"
+    fi
+
+    MEMORY_PEAK=$(echo "$SERVICE_INFO" | jq -r '.memory_peak // empty')
+    if [[ -n "$MEMORY_PEAK" ]]; then
+        PEAK_GB=$(format_bytes_to_gb "$MEMORY_PEAK")
+        echo "  Peak: ${PEAK_GB}GB"
+    fi
+
+    # Check RPC credentials
+    RPC_USER="${BITCOIN_RPC_USER:-}"
+    RPC_PASSWORD="${BITCOIN_RPC_PASSWORD:-}"
+
+    if [[ -n "$RPC_USER" && -n "$RPC_PASSWORD" ]]; then
         echo "✓ RPC: Credentials available"
 
-        # Try RPC calls
-        if BLOCKCHAIN_INFO=$(bitcoin-cli -rpcuser="$BITCOIN_RPC_USER" -rpcpassword="$BITCOIN_RPC_PASSWORD" getblockchaininfo 2>/dev/null); then
+        # Get blockchain information using library function
+        BLOCKCHAIN_INFO=$(get_bitcoin_blockchain_info "$BITCOIN_USER")
+        BLOCKCHAIN_ERROR=$(echo "$BLOCKCHAIN_INFO" | jq -r '.error // empty')
+
+        if [[ -z "$BLOCKCHAIN_ERROR" ]]; then
             echo "✓ RPC: Connectivity verified"
 
-            # Extract key info
-            BLOCKS=$(echo "$BLOCKCHAIN_INFO" | jq -r '.blocks // "unknown"')
+            # Extract blockchain data
             CHAIN=$(echo "$BLOCKCHAIN_INFO" | jq -r '.chain // "unknown"')
+            BLOCKS=$(echo "$BLOCKCHAIN_INFO" | jq -r '.blocks // "unknown"')
+            SIZE_ON_DISK=$(echo "$BLOCKCHAIN_INFO" | jq -r '.size_on_disk // 0')
+            PRUNED=$(echo "$BLOCKCHAIN_INFO" | jq -r '.pruned // false')
+            PRUNE_TARGET=$(echo "$BLOCKCHAIN_INFO" | jq -r '.prune_target_size // 0')
             VERIFICATION_PROGRESS=$(echo "$BLOCKCHAIN_INFO" | jq -r '.verificationprogress // 0')
+            INITIAL_BLOCK_DOWNLOAD=$(echo "$BLOCKCHAIN_INFO" | jq -r '.initialblockdownload // false')
+            UPTIME_SECONDS=$(echo "$BLOCKCHAIN_INFO" | jq -r '.uptime // 0')
 
-            echo "  Chain: $CHAIN (actual)"
+            echo ""
+            echo "⛓️  Blockchain Status:"
+            echo "  Chain: $CHAIN"
             echo "  Blocks: $BLOCKS"
+
+            # Show data directory from config
+            DATA_DIR=$(sudo -u "$BITCOIN_USER" bitcoin-cli -conf="/home/$BITCOIN_USER/bitcoin.conf" getblockchaininfo 2>/dev/null | jq -r '.datadir // empty' 2>/dev/null)
+            if [[ -z "$DATA_DIR" ]]; then
+                # Fallback to reading from config file
+                DATA_DIR=$(grep "^datadir=" "/home/$BITCOIN_USER/bitcoin.conf" 2>/dev/null | cut -d'=' -f2 || echo "${BITCOIN_DATA_DIR:-/home/$BITCOIN_USER/data}")
+            fi
+            echo "  Data directory: $DATA_DIR"
+
+            # Show disk usage
+            if [[ "$SIZE_ON_DISK" != "0" ]]; then
+                DISK_GB=$(format_bytes_to_gb "$SIZE_ON_DISK")
+                echo "  Disk usage: ${DISK_GB}GB"
+            fi
+
+            # Show pruning info
+            if [[ "$PRUNED" == "true" ]]; then
+                if [[ "$PRUNE_TARGET" != "0" ]]; then
+                    PRUNE_GB=$(format_bytes_to_gb "$PRUNE_TARGET")
+                    echo "  Pruning: Enabled (~${PRUNE_GB}GB target)"
+                else
+                    echo "  Pruning: Enabled"
+                fi
+            else
+                echo "  Pruning: Disabled (full node)"
+            fi
 
             # Verify network matches configuration
             case "$INTENDED_NETWORK" in
@@ -128,6 +211,13 @@ if is_bitcoin_running "$BITCOIN_USER"; then
                     echo "⚠ Network: Mismatch! Expected testnet, running $CHAIN"
                 fi
                 ;;
+            testnet4)
+                if [[ "$CHAIN" == "testnet4" ]]; then
+                    echo "✓ Network: Configuration matches actual"
+                else
+                    echo "⚠ Network: Mismatch! Expected testnet4, running $CHAIN"
+                fi
+                ;;
             regtest)
                 if [[ "$CHAIN" == "regtest" ]]; then
                     echo "✓ Network: Configuration matches actual"
@@ -142,90 +232,121 @@ if is_bitcoin_running "$BITCOIN_USER"; then
 
             # Show sync status
             if command -v bc >/dev/null 2>&1; then
-                if (($(echo "$VERIFICATION_PROGRESS > 0.999" | bc -l))); then
-                    echo "✓ Sync: Fully synchronized"
-                else
-                    # Convert to percentage, handling very small numbers
+                if [[ "$INITIAL_BLOCK_DOWNLOAD" == "true" ]]; then
+                    # Show percentage even during IBD
                     SYNC_PERCENT=$(echo "scale=2; $VERIFICATION_PROGRESS * 100" | bc -l)
+                    if (($(echo "$SYNC_PERCENT < 0.01" | bc -l))); then
+                        echo "⏳ Sync: Initial block download starting (< 0.01%)"
+                    else
+                        SYNC_PERCENT_DISPLAY=$(printf "%.1f" "$SYNC_PERCENT")
+                        echo "⏳ Sync: Initial block download (${SYNC_PERCENT_DISPLAY}%)"
 
-                    # Convert scientific notation and handle very small percentages
+                        # Estimate completion if we have reasonable progress
+                        if (($(echo "$SYNC_PERCENT > 1" | bc -l))); then
+                            # Get approximate total blocks (rough estimate)
+                            case "$CHAIN" in
+                            main)
+                                APPROX_TOTAL_BLOCKS=820000 # Rough current mainnet height
+                                ;;
+                            testnet4)
+                                APPROX_TOTAL_BLOCKS=90000 # Rough current testnet4 height
+                                ;;
+                            *)
+                                APPROX_TOTAL_BLOCKS="unknown"
+                                ;;
+                            esac
+
+                            if [[ "$APPROX_TOTAL_BLOCKS" != "unknown" ]]; then
+                                REMAINING_PERCENT=$(echo "scale=2; 100 - $SYNC_PERCENT" | bc -l)
+                                ESTIMATED_REMAINING=$(echo "scale=0; ($APPROX_TOTAL_BLOCKS - $BLOCKS)" | bc -l)
+                                echo "  Estimated remaining: ~${ESTIMATED_REMAINING} blocks"
+                            fi
+                        fi
+                    fi
+                elif (($(echo "$VERIFICATION_PROGRESS > 0.999" | bc -l))); then
+                    echo "✓ Sync: Fully synchronized"
+
+                    # Show uptime
+                    if [[ "$UPTIME_SECONDS" != "0" ]]; then
+                        UPTIME_HOURS=$(format_uptime_to_hours "$UPTIME_SECONDS")
+                        echo "  Uptime: ${UPTIME_HOURS}h"
+                    fi
+                else
+                    SYNC_PERCENT=$(echo "scale=2; $VERIFICATION_PROGRESS * 100" | bc -l)
                     if (($(echo "$SYNC_PERCENT < 0.01" | bc -l))); then
                         echo "⏳ Sync: Starting (< 0.01%)"
                     else
-                        # Round to integer for display
-                        SYNC_PERCENT_INT=$(echo "scale=0; $SYNC_PERCENT / 1" | bc -l)
-                        if [[ "$SYNC_PERCENT_INT" -eq 0 ]]; then
-                            echo "⏳ Sync: < 1% complete"
-                        else
-                            echo "⏳ Sync: ${SYNC_PERCENT_INT}% complete"
-                        fi
+                        SYNC_PERCENT_DISPLAY=$(printf "%.1f" "$SYNC_PERCENT")
+                        echo "⏳ Sync: ${SYNC_PERCENT_DISPLAY}% complete"
                     fi
                 fi
             else
-                # Fallback without bc
-                if [[ "$VERIFICATION_PROGRESS" == "1" ]] || [[ "$VERIFICATION_PROGRESS" == "1.0" ]]; then
+                if [[ "$INITIAL_BLOCK_DOWNLOAD" == "true" ]]; then
+                    echo "⏳ Sync: Initial block download in progress"
+                elif [[ "$VERIFICATION_PROGRESS" == "1" ]] || [[ "$VERIFICATION_PROGRESS" == "1.0" ]]; then
                     echo "✓ Sync: Fully synchronized"
                 else
                     echo "⏳ Sync: In progress"
                 fi
             fi
 
-            # Get detailed peer breakdown
-            if PEER_INFO=$(bitcoin-cli -rpcuser="$BITCOIN_RPC_USER" -rpcpassword="$BITCOIN_RPC_PASSWORD" getpeerinfo 2>/dev/null); then
-                TOTAL_PEERS=$(echo "$PEER_INFO" | jq 'length')
-                INBOUND_PEERS=$(echo "$PEER_INFO" | jq '[.[] | select(.inbound == true)] | length')
-                OUTBOUND_PEERS=$(echo "$PEER_INFO" | jq '[.[] | select(.inbound == false)] | length')
-                FULL_RELAY=$(echo "$PEER_INFO" | jq '[.[] | select(.connection_type == "outbound-full-relay")] | length')
-                BLOCK_RELAY=$(echo "$PEER_INFO" | jq '[.[] | select(.connection_type == "block-relay-only")] | length')
+            # Get network information using library function
+            NETWORK_INFO=$(get_bitcoin_network_info "$BITCOIN_USER")
+            NETWORK_ERROR=$(echo "$NETWORK_INFO" | jq -r '.error // empty')
 
-                echo "  Connections: $TOTAL_PEERS peers total"
-                echo "    Inbound: $INBOUND_PEERS, Outbound: $OUTBOUND_PEERS"
-                echo "    Full-relay: $FULL_RELAY, Block-only: $BLOCK_RELAY"
+            if [[ -z "$NETWORK_ERROR" ]]; then
+                echo ""
+                echo "🌐 Network Connections:"
+
+                TOTAL_PEERS=$(echo "$NETWORK_INFO" | jq -r '.total_peers // 0')
+                INBOUND_PEERS=$(echo "$NETWORK_INFO" | jq -r '.inbound_peers // 0')
+                OUTBOUND_PEERS=$(echo "$NETWORK_INFO" | jq -r '.outbound_peers // 0')
+                FULL_RELAY=$(echo "$NETWORK_INFO" | jq -r '.full_relay // 0')
+                BLOCK_RELAY=$(echo "$NETWORK_INFO" | jq -r '.block_relay // 0')
+
+                echo "  Total peers: $TOTAL_PEERS"
+                echo "  Inbound: $INBOUND_PEERS, Outbound: $OUTBOUND_PEERS"
+                echo "  Full-relay: $FULL_RELAY, Block-only: $BLOCK_RELAY"
+            else
+                echo ""
+                echo "⚠ Network: Failed to get connection details"
             fi
 
-            # Check listening status and firewall
+            # Get topology information using library function
+            TOPOLOGY_INFO=$(get_bitcoin_topology_info "$BITCOIN_USER" "$INTENDED_NETWORK")
+
             echo ""
-            echo "🌐 Network Topology:"
+            echo "🔌 Network Topology:"
 
-            # Determine expected p2p port based on network
-            case "$INTENDED_NETWORK" in
-            testnet) P2P_PORT="18333" ;;
-            testnet4) P2P_PORT="48333" ;;
-            signet) P2P_PORT="38333" ;;
-            regtest) P2P_PORT="18444" ;;
-            devnet) P2P_PORT="18444" ;;
-            *) P2P_PORT="8333" ;;
-            esac
+            P2P_PORT=$(echo "$TOPOLOGY_INFO" | jq -r '.p2p_port // 8333')
+            LISTENING=$(echo "$TOPOLOGY_INFO" | jq -r '.listening // false')
+            FIREWALL_STATUS=$(echo "$TOPOLOGY_INFO" | jq -r '.firewall_status // "unknown"')
+            FIREWALL_DESC=$(echo "$TOPOLOGY_INFO" | jq -r '.firewall_description // "Status unclear"')
 
-            # Check if listening
-            if sudo ss -tlnp | grep ":$P2P_PORT " >/dev/null 2>&1; then
+            if [[ "$LISTENING" == "true" ]]; then
                 echo "✓ Listening: Port $P2P_PORT accepting connections"
             else
                 echo "✗ Listening: Port $P2P_PORT not bound"
             fi
 
-            # Check firewall status for p2p port
-            if command -v ufw >/dev/null 2>&1; then
-                UFW_STATUS=$(sudo ufw status 2>/dev/null | grep "$P2P_PORT" || echo "")
-                if [[ -n "$UFW_STATUS" ]]; then
-                    echo "✓ Firewall: Port $P2P_PORT explicitly allowed"
-                    echo "  → Can accept inbound peer connections"
-                else
-                    UFW_DEFAULT=$(sudo ufw status verbose 2>/dev/null | grep "Default:" | grep "deny (incoming)" || echo "")
-                    if [[ -n "$UFW_DEFAULT" ]]; then
-                        echo "⚠ Firewall: Port $P2P_PORT blocked by default policy"
-                        echo "  → Outbound-only operation (secure for validators)"
-                    else
-                        echo "? Firewall: Status unclear"
-                    fi
-                fi
-            else
-                echo "? Firewall: UFW not available"
-            fi
+            case "$FIREWALL_STATUS" in
+            allowed)
+                echo "✓ Firewall: $FIREWALL_DESC"
+                echo "  → Can accept inbound peer connections"
+                ;;
+            blocked)
+                echo "⚠ Firewall: $FIREWALL_DESC"
+                echo "  → Outbound-only operation (secure for validators)"
+                ;;
+            *)
+                echo "? Firewall: $FIREWALL_DESC"
+                ;;
+            esac
 
         else
-            echo "✗ RPC: Connection failed"
+            echo "✗ RPC: Connection failed ($BLOCKCHAIN_ERROR)"
             echo "  Check bitcoin.conf RPC settings"
+            echo "  Ensure bitcoind is fully started"
         fi
     else
         echo "⚠ RPC: No credentials in environment"
@@ -235,6 +356,17 @@ if is_bitcoin_running "$BITCOIN_USER"; then
 else
     echo "✗ Process: bitcoind not running"
     echo "💡 Run: bitcoin-up to start"
+
+    # Check if service exists but is failed
+    SERVICE_NAME="arch-bitcoind@${BITCOIN_USER}.service"
+    if systemctl list-units --all | grep -q "$SERVICE_NAME"; then
+        SERVICE_STATE=$(systemctl is-active "$SERVICE_NAME" 2>/dev/null || echo "inactive")
+        if [[ "$SERVICE_STATE" == "failed" ]]; then
+            echo "⚠ Service: $SERVICE_NAME is in failed state"
+            echo "  Check logs: journalctl -u $SERVICE_NAME"
+        fi
+    fi
 fi
 
+echo ""
 echo "═══════════════════════════════════"

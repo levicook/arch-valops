@@ -8,6 +8,7 @@
 - **NEVER provide defaults** - caller's responsibility to handle defaults
 - **Pure functions** - side-effect free, predictable, testable
 - **Explicit parameter documentation** - comment with parameter list
+- **Parameter validation** - validate required parameters and fail fast
 - **No executable code at file level** - only function definitions
 - **Example:**
   ```bash
@@ -15,7 +16,16 @@
   update_validator_operator() {
       local username="$1"
       local data_dir="$2"
-      # ... no ${VAR:-default} patterns
+      local rpc_bind_ip="$3"
+      local rpc_bind_port="$4"
+      
+      # Validate required parameters
+      if [[ -z "$username" || -z "$data_dir" ]]; then
+          log_error "username and data_dir parameters are required"
+          return 1
+      fi
+      
+      # ... no ${VAR:-default} patterns in library functions
   }
   ```
 
@@ -109,25 +119,80 @@ titan-down  # Stops local titan infrastructure
 **Key insight**: Distinguish between **infrastructure services** (bitcoin-up/titan-up) and **application configuration** (ARCH_* variables).
 
 ### Executable Scripts (`bin/*-up`, `bin/*-down`, etc.)
-- **Observe global variables and flags** - read environment, accept CLI args
-- **RARELY provide defaults** - only for destructive actions (e.g. `--clobber`)
-- **Delegate to libraries with explicit parameters**
-- **Handle environment variable reading at script level**
+- **CRITICAL RULE**: Only `main()` function accesses global variables - NO EXCEPTIONS
+- **All other functions**: Must use explicit parameters only, never access globals
+- **Usage function**: REQUIRED for all scripts, called from help flag and error conditions
+- **Environment validation**: Done in `main()` only, not delegated to other functions
+- **Parameter passing**: `main()` reads globals, passes explicit parameters to all functions
 - **Example:**
   ```bash
-  # Read environment (no defaults here)
-  data_dir="$DATA_DIR"
-  rpc_port="$RPC_BIND_PORT"
+  # Usage function - REQUIRED
+  usage() {
+      cat <<EOF
+  Usage: $(basename "$0") [OPTIONS]
   
-  # Validate required vars
-  if [[ -z "$data_dir" ]]; then
-      log_error "DATA_DIR environment variable required"
-      exit 1
-  fi
+  Description of what this script does.
   
-  # Call library with explicit parameters
-  update_validator_operator "$username" "$data_dir" "$rpc_port"
+  Options:
+      -h, --help      Show this help message
+  
+  Environment Variables (set by .envrc):
+      REQUIRED_VAR        Description
+  EOF
+  }
+  
+  # Pure function - NO global access
+  ensure_service_infrastructure() {
+      local service_user="$1"
+      local service_config="$2"
+      
+      # Validate required parameters
+      if [[ -z "$service_user" ]]; then
+          log_error "service_user parameter is required"
+          return 1
+      fi
+      
+      # ... implementation using only local vars and parameters
+  }
+  
+  # ONLY main() accesses globals
+  main() {
+      # Parse command line arguments
+      while [[ $# -gt 0 ]]; do
+          case $1 in
+          -h | --help)
+              usage
+              exit 0
+              ;;
+          *)
+              log_error "Unknown option: $1"
+              usage  # Always call usage on error
+              exit 1
+              ;;
+          esac
+      done
+      
+      # Validate required environment variables
+      local missing_vars=()
+      [[ -z "${REQUIRED_VAR:-}" ]] && missing_vars+=("REQUIRED_VAR")
+      
+      if [[ ${#missing_vars[@]} -gt 0 ]]; then
+          log_error "Missing required environment variables: ${missing_vars[*]}"
+          usage  # Always call usage on error
+          exit 1
+      fi
+      
+      # Call functions with explicit parameters
+      ensure_service_infrastructure "$REQUIRED_VAR" "$OTHER_VAR"
+  }
   ```
+
+### Code Modification Rules
+- **WHEN EDITING EXISTING CODE**: Upgrade to these patterns during the edit
+- **NO MIXED PATTERNS**: Don't leave some functions using globals while others use parameters
+- **REFACTOR INCREMENTALLY**: When touching a function, upgrade it to pure parameter-based design
+- **REMOVE DEAD CODE**: Delete unused flags, variables, or functions during edits
+- **USAGE FUNCTIONS**: Add usage() function if script doesn't have one
 
 ### Configuration Scripts (`.envrc` files)
 - **Driver for defaults** - primary place where sensible defaults are set
@@ -158,7 +223,7 @@ titan-down  # Stops local titan infrastructure
     ↓
 .envrc (tracked)             ← Defaults and environment logic  
     ↓
-executable scripts (bin/)    ← Environment reading + validation
+executable scripts (bin/)    ← Environment reading + validation (main() only)
     ↓  
 library functions (libs/)    ← Source-friendly, pure functions with explicit args
 ```
@@ -193,6 +258,23 @@ function bad_library() {
 }
 ```
 
+### ❌ Globals in Non-Main Functions
+```bash
+# WRONG - function other than main() accessing globals
+ensure_service_running() {
+    local user="$SERVICE_USER"  # NO! Only main() can do this
+}
+```
+
+### ❌ Missing Usage Functions
+```bash
+# WRONG - no usage function, hard to debug errors
+if [[ -z "$REQUIRED_VAR" ]]; then
+    log_error "REQUIRED_VAR is required"  # NO! Should call usage()
+    exit 1
+fi
+```
+
 ### ❌ Defaults in Executables  
 ```bash
 # WRONG - executable providing defaults
@@ -219,25 +301,38 @@ setup_network() {
     local network_mode="$2" 
     local endpoint="$3"
     
-    # Pure function - no globals, explicit params
+    # Validate required parameters
+    if [[ -z "$username" || -z "$network_mode" ]]; then
+        log_error "username and network_mode parameters are required"
+        return 1
+    fi
+    
+    # Pure function - no globals, explicit params only
 }
 ```
 
 ### ✅ Executable Scripts
 ```bash
-# Read environment (validation only)
-username="$VALIDATOR_USER"
-network_mode="$NETWORK_MODE"
-endpoint="$TITAN_ENDPOINT"
-
-# Validate required
-if [[ -z "$username" ]]; then
-    log_error "VALIDATOR_USER required"
-    exit 1
-fi
-
-# Call library
-setup_network "$username" "$network_mode" "$endpoint"
+# ONLY main() accesses globals
+main() {
+    # Parse args, validate environment
+    local username="$VALIDATOR_USER"
+    local network_mode="$NETWORK_MODE"
+    local endpoint="$TITAN_ENDPOINT"
+    
+    # Validate required
+    local missing_vars=()
+    [[ -z "$username" ]] && missing_vars+=("VALIDATOR_USER")
+    
+    if [[ ${#missing_vars[@]} -gt 0 ]]; then
+        log_error "Missing required environment variables: ${missing_vars[*]}"
+        usage
+        exit 1
+    fi
+    
+    # Call library with explicit parameters
+    setup_network "$username" "$network_mode" "$endpoint"
+}
 ```
 
 ### ✅ Configuration (.envrc)
@@ -271,4 +366,4 @@ export ARCH_TITAN_ENDPOINT="${ARCH_TITAN_ENDPOINT:-$(select_by_mode $ARCH_TITAN_
 - **NOT be silent** - should fail loudly if backup fails
 - **Use PROJECT_ROOT** - `$PROJECT_ROOT/bin/backup-all` for consistency
 - **Block script completion** - script fails if backup fails
-- **Always run** - even for minor operations, safety first 
+- **Always run** - even for minor operations, safety first
