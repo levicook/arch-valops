@@ -1,6 +1,6 @@
 # Custom Binary Deployment
 
-🔧 **For**: Users running modified blockchain software  
+🔧 **For**: Users running modified blockchain software
 🎯 **Focus**: Building and deploying custom binaries via isolated VMs
 
 ## Overview
@@ -271,4 +271,4 @@ validator-init && validator-up
 
 ---
 
-**Most users should use official releases.** Only use custom binaries if you need specific modifications or are contributing to blockchain development. 
+**Most users should use official releases.** Only use custom binaries if you need specific modifications or are contributing to blockchain development.

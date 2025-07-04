@@ -1,6 +1,6 @@
 # Development Guide
 
-👩‍💻 **For**: Contributors wanting to understand and modify the valops codebase  
+👩‍💻 **For**: Contributors wanting to understand and modify the valops codebase
 🎯 **Focus**: System architecture, development workflow, testing procedures, contributing guidelines
 
 ## System Architecture
@@ -67,7 +67,7 @@ pkill validator
 nohup validator &
 ./run-validator
 
-# ✅ Scripts should delegate to systemd  
+# ✅ Scripts should delegate to systemd
 systemctl start arch-validator@testnet-validator
 systemctl stop arch-validator@testnet-validator
 systemctl restart arch-validator@testnet-validator
@@ -294,7 +294,7 @@ journalctl --since "1 hour ago" | grep "validator-up:"
 
 ### Linting and Quality Checks
 ```bash
-# Run shellcheck on all scripts  
+# Run shellcheck on all scripts
 find bin/ -name "*.sh" -exec shellcheck {} \;
 find libs/ -name "*.sh" -exec shellcheck {} \;
 
@@ -337,7 +337,7 @@ systemctl restart arch-validator@testnet-validator
 ### Documentation Updates
 When making changes, update relevant documentation:
 - **QUICK-START.md**: New prerequisites or setup steps
-- **OPERATIONS.md**: New operational procedures  
+- **OPERATIONS.md**: New operational procedures
 - **OBSERVABILITY.md**: New monitoring capabilities
 - **SECURITY.md**: Security implications
 - **Version references**: Throughout all documentation
@@ -469,4 +469,4 @@ This separation provides:
 - **Observability**: Centralized logging via journalctl
 - **Maintainability**: Clear separation of concerns
 
-When developing new scripts, always follow the **infrastructure management** pattern and delegate process lifecycle to systemd. 
+When developing new scripts, always follow the **infrastructure management** pattern and delegate process lifecycle to systemd.

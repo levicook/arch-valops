@@ -14,7 +14,7 @@ EnvironmentFile=/home/%i/validator.env
 
 # Disable OpenTelemetry (matches proven run-validator)
 Environment="OTEL_SDK_DISABLED=true"
-Environment="OTEL_TRACES_EXPORTER=none"  
+Environment="OTEL_TRACES_EXPORTER=none"
 Environment="OTEL_METRICS_EXPORTER=none"
 Environment="OTEL_LOGS_EXPORTER=none"
 
@@ -46,4 +46,4 @@ KillSignal=SIGTERM
 TimeoutStopSec=30
 
 [Install]
-WantedBy=multi-user.target 
+WantedBy=multi-user.target

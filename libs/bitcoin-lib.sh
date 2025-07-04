@@ -475,7 +475,7 @@ bitcoin_rpc_call() {
         }')
     else
         rpc_request=$(jq -n --arg method "$rpc_method" --arg id "$request_id" --argjson params "$(printf '%s\n' "${rpc_params[@]}" | jq -R . | jq -s .)" '{
-            jsonrpc: "2.0", 
+            jsonrpc: "2.0",
             method: $method,
             params: $params,
             id: $id

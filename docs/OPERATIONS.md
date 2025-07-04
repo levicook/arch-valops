@@ -1,278 +1,326 @@
 # Operations Guide
 
-👔 **For**: Production operators managing Arch Network validators
-🎯 **Focus**: Daily management, maintenance, troubleshooting
+👔 **For**: Production operators managing Arch Network validator infrastructure
+🎯 **Focus**: Daily management, service operations, troubleshooting
 
 ## Quick Reference
 
 ```bash
-# Daily operations (with pre-configured environment)
-cd validators/testnet && validator-dashboard  # Monitor validator
-validator-up                          # Start validator
-validator-down                        # Stop validator
-validator-down --clobber              # Complete removal (with backup)
+# Infrastructure service management (dependency order: Bitcoin → Titan → Validator)
+cd validators/testnet
 
-# Or using environment variables
-VALIDATOR_USER=testnet-validator validator-dashboard
-VALIDATOR_USER=testnet-validator validator-up
-VALIDATOR_USER=testnet-validator validator-down
+# Service control
+bitcoin-up / bitcoin-down      # Bitcoin testnet4 node
+titan-up / titan-down          # Titan rune indexer
+validator-up / validator-down   # Arch validator
+
+# Service status
+bitcoin-status                 # Bitcoin sync and network status
+titan-status                   # Titan indexing progress
+validator-dashboard            # Validator monitoring dashboard
+
+# Complete teardown (with automatic backups)
+validator-down --clobber      # Removes validator user and data
+titan-down --clobber          # Removes titan user and data
+bitcoin-down --clobber        # Removes bitcoin user and data
 
 # Binary updates
-ARCH_VERSION=v0.5.3 sync-arch-bins    # Update Arch binaries
-BITCOIN_VERSION=29.0 sync-bitcoin-bins # Update Bitcoin binaries
-sync-titan-bins                       # Update Titan binary
-
-# Health checks
-tail -f /home/$VALIDATOR_USER/logs/validator.log  # Live logs (set VALIDATOR_USER first)
-curl -X POST -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"get_block_count","params":[],"id":1}' http://127.0.0.1:9002/  # Test RPC
+sync-arch-bins                # Update Arch binaries
+sync-bitcoin-bins             # Update Bitcoin binaries
+sync-titan-bins               # Update Titan binaries
 ```
 
-## Validator Lifecycle
+## Service Architecture
 
-### Starting
+Your validator runs a complete infrastructure stack:
+
+```
+Bitcoin testnet4 node (testnet-bitcoin user)
+├── Port: 48332 (RPC)
+├── Port: 48333 (P2P)
+├── Data: /home/testnet-bitcoin/data
+└── Logs: journalctl -u arch-bitcoind@testnet-bitcoin
+    ↓
+Titan rune indexer (testnet-titan user)
+├── Port: 3030 (HTTP API)
+├── Data: /home/testnet-titan/data
+├── Logs: journalctl -u arch-titan@testnet-titan
+└── Depends on: Bitcoin RPC
+    ↓
+Arch validator (testnet-validator user)
+├── Port: 9002 (RPC)
+├── Port: 8081 (WebSocket, if enabled)
+├── Data: /home/testnet-validator/data
+├── Logs: journalctl -u arch-validator@testnet-validator
+└── Depends on: Titan HTTP API
+```
+
+## Service Operations
+
+### Bitcoin Node
 ```bash
-# Standard startup (updates configs, starts process)
-validator-up
+# Start/stop Bitcoin node
+bitcoin-up                    # Starts Bitcoin testnet4 node
+bitcoin-down                  # Stops Bitcoin node gracefully
 
-# Verify startup
-validator-dashboard  # Check status window
+# Monitor Bitcoin
+bitcoin-status               # Comprehensive Bitcoin status
+journalctl -u arch-bitcoind@testnet-bitcoin -f  # Live logs
+
+# Bitcoin takes 20-30 minutes to sync testnet4 from network
 ```
 
-### Stopping
+### Titan Indexer
 ```bash
-# Graceful shutdown
-validator-down
+# Start/stop Titan (requires Bitcoin to be running)
+titan-up                     # Starts Titan rune indexer
+titan-down                   # Stops Titan gracefully
 
-# Force stop if needed
-systemctl stop arch-validator@$VALIDATOR_USER
+# Monitor Titan
+titan-status                 # Comprehensive Titan status
+journalctl -u arch-titan@testnet-titan -f       # Live logs
+
+# Titan syncs from Bitcoin - check titan-status for progress
 ```
 
-### Restarting
+### Validator
 ```bash
-# Standard restart
-validator-down && validator-up
+# Start/stop Validator (requires Bitcoin + Titan running)
+validator-up                 # Starts Arch validator
+validator-down               # Stops validator gracefully
 
-# Emergency restart with systemd
-systemctl restart arch-validator@$VALIDATOR_USER
+# Monitor Validator
+validator-dashboard          # Interactive monitoring dashboard
+journalctl -u arch-validator@testnet-validator -f  # Live logs
+
+# Dashboard navigation: Ctrl+b + n/p (windows), Ctrl+b + d (detach)
 ```
 
-## Binary Management
+## Service Dependencies
 
-### Production Updates
-```bash
-# Update to specific versions (recommended)
-ARCH_VERSION=v0.5.3 sync-arch-bins
-BITCOIN_VERSION=29.0 sync-bitcoin-bins
+**Critical**: Services must be started in dependency order:
 
-# Restart to use new binaries
-validator-down && validator-up
-```
+1. **Bitcoin first**: `bitcoin-up` → Wait for sync
+2. **Titan second**: `titan-up` → Wait for indexing
+3. **Validator last**: `validator-up`
 
-### Development Updates
-```bash
-# Sync from development VM
-SYNC_STRATEGY_ARCH=vm sync-arch-bins
-SYNC_STRATEGY_BITCOIN=vm sync-bitcoin-bins
-sync-titan-bins
-
-# Restart validator
-validator-down && validator-up
-```
-
-**See [MANAGEMENT.md](MANAGEMENT.md) for complete binary management guide.**
+**Stopping**: Reverse order is safe but not required.
 
 ## Monitoring
 
-### Dashboard
+### Status Commands
 ```bash
-# Start monitoring dashboard
-validator-dashboard
+# Quick health check of all services
+bitcoin-status && echo "---" && titan-status && echo "---" && validator-dashboard
 
-# Navigation
-# Ctrl+b + n/p  - Switch windows
-# Ctrl+b + d    - Detach (keeps running)
-# Ctrl+b + arrows - Switch panes
+# Individual service status
+bitcoin-status               # Bitcoin sync progress, peer connections
+titan-status                 # Titan indexing progress, rune count
+validator-dashboard          # Validator RPC, network, logs
 ```
 
-### Manual Health Checks
-```bash
-# Service status (systemd)
-systemctl status arch-validator@testnet-validator --no-pager
+### Service Health Indicators
 
-# RPC health
-curl -X POST -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"get_block_count","params":[],"id":1}' http://127.0.0.1:9002/
+**Bitcoin (bitcoin-status)**:
+- ✅ Service running, blocks syncing
+- ✅ Peer connections > 0
+- ✅ No persistent errors
 
-# Log analysis (systemd journal)
-journalctl -u arch-validator@testnet-validator -n 20 --no-pager
-journalctl -u arch-validator@testnet-validator --since "1 hour ago" -p err --no-pager
-```
+**Titan (titan-status)**:
+- ✅ Service running, indexing progress
+- ✅ Height matches Bitcoin height
+- ✅ API responding on port 3030
 
-### Key Metrics to Monitor
-- **Service**: Validator systemd service active and running
-- **RPC**: Port 9002 responding
-- **Network**: Connected to Titan endpoints
-- **Disk**: Data directory growth
-- **Logs**: No recurring errors in systemd journal
+**Validator (validator-dashboard)**:
+- ✅ Service running, RPC responding
+- ✅ Connected to local Titan
+- ✅ No error messages in logs
 
-### Service Architecture
-The system runs multiple systemd services:
+### Systemd Service Status
 ```bash
 # Check all arch services
 sudo systemctl list-units --type=service --state=active | grep arch
 
-# Typical output:
-# arch-bitcoind@testnet-bitcoin.service     loaded active running
-# arch-validator@testnet-validator.service  loaded active running
-# arch-titan@testnet-titan.service          loaded active running (if local)
+# Individual service status
+systemctl status arch-bitcoind@testnet-bitcoin --no-pager
+systemctl status arch-titan@testnet-titan --no-pager
+systemctl status arch-validator@testnet-validator --no-pager
 ```
-
-**See [OBSERVABILITY.md](OBSERVABILITY.md) for comprehensive monitoring setup.**
 
 ## Maintenance Tasks
 
 ### Daily
-- Check dashboard for errors
-- Verify RPC connectivity
-- Monitor log for unusual activity
+```bash
+# Quick health check
+cd validators/testnet
+bitcoin-status && titan-status && validator-dashboard
+
+# Check for any service failures
+sudo systemctl --failed | grep arch
+```
 
 ### Weekly
 ```bash
 # System updates
 sudo apt update && sudo apt upgrade -y
 
-# Log cleanup (automatic via logrotate)
-ls -la /home/testnet-validator/logs/
-
-# Disk usage check
+# Disk usage monitoring
 df -h
-sudo du -sh /home/testnet-validator/data/
+du -sh /home/testnet-*/data/  # All service data directories
+
+# Log rotation (automatic via systemd)
+journalctl --disk-usage
 ```
 
 ### Monthly
 ```bash
-# Review validator performance
-journalctl -u arch-validator@testnet-validator | grep "block height" | tail -20
-
-# Check for restarts (systemd restart count)
-systemctl show arch-validator@testnet-validator -p NRestarts --value --no-pager
-
 # Binary updates (as needed)
-# Check for new releases and update per Binary Management section
+sync-arch-bins
+sync-bitcoin-bins
+sync-titan-bins
+
+# Restart services after binary updates
+validator-down && titan-down && bitcoin-down
+bitcoin-up && titan-up && validator-up
 ```
 
 ## Troubleshooting
 
-### Validator Won't Start
-**Symptoms**: `validator-up` fails or process exits immediately
+### Service Won't Start
 
-**Diagnosis**:
+**Bitcoin issues**:
 ```bash
-# Check recent logs (systemd journal)
+# Check Bitcoin logs
+journalctl -u arch-bitcoind@testnet-bitcoin -n 50 --no-pager
+
+# Common issues:
+# - Insufficient disk space
+# - Network connectivity
+# - Corrupted blockchain data
+```
+
+**Titan issues**:
+```bash
+# Check Titan logs
+journalctl -u arch-titan@testnet-titan -n 50 --no-pager
+
+# Common issues:
+# - Bitcoin not running/synced
+# - Database corruption (needs --clobber)
+# - Network connectivity to Bitcoin RPC
+```
+
+**Validator issues**:
+```bash
+# Check validator logs
 journalctl -u arch-validator@testnet-validator -n 50 --no-pager
 
-# Verify binary
-which validator && validator --version
+# Common issues:
+# - Titan not running/synced
+# - Missing validator identity
+# - Network connectivity to Titan API
+```
 
-# Check user/permissions
-sudo -u testnet-validator ls -la /home/testnet-validator/
+### Service Restart Loop
+
+**Diagnosis**:
+```bash
+# Check service restart count
+systemctl show arch-validator@testnet-validator -p NRestarts --value
+
+# Check recent failures
+journalctl -u arch-validator@testnet-validator --since "1 hour ago" -p err
 ```
 
 **Solutions**:
-1. **Re-initialize**: `VALIDATOR_ENCRYPTED_IDENTITY_KEY=backup.age validator-init`
-2. **Update binaries**: See Binary Management section
-3. **Check disk space**: `df -h`
-4. **Review config**: Environment variables in `validators/testnet/.envrc`
+1. **Check dependencies**: Ensure Bitcoin and Titan are running
+2. **Check disk space**: `df -h`
+3. **Review configuration**: Check `validators/testnet/.envrc`
+4. **Binary issues**: Re-run `sync-*-bins` commands
 
 ### High Resource Usage
-**Symptoms**: High CPU/memory/disk usage
 
-**Diagnosis**:
+**Check resource consumption**:
 ```bash
-# Check service status
+# CPU/Memory usage by service
+systemctl status arch-bitcoind@testnet-bitcoin --no-pager
+systemctl status arch-titan@testnet-titan --no-pager
 systemctl status arch-validator@testnet-validator --no-pager
 
-# Check disk usage (requires sudo for other users' directories)
-sudo du -sh /home/testnet-validator/data/*
-
-# Check for multiple processes (should be 1 systemd service)
-systemctl is-active arch-validator@testnet-validator && echo "1" || echo "0"
+# Disk usage
+du -sh /home/testnet-*/data/
 ```
 
-**Solutions**:
-1. **Multiple processes**: Kill extras, ensure only one running
-2. **Disk space**: Monitor data directory growth, consider cleanup
-3. **Memory leaks**: Restart validator: `validator-down && validator-up`
+**Typical resource usage**:
+- **Bitcoin**: 200-500MB RAM, 20-50GB disk (testnet4)
+- **Titan**: 100-200MB RAM, 5-10GB disk
+- **Validator**: 50-100MB RAM, 1-5GB disk
 
 ### Network Connectivity Issues
-**Symptoms**: RPC not responding, Titan connection errors
 
-**Diagnosis**:
+**Check service networking**:
 ```bash
-# Check port binding
-sudo ss -tlnp | grep 9002
+# Verify service ports
+sudo ss -tlnp | grep -E "(48332|3030|9002)"
 
-# Test endpoints
-curl -s https://titan-public-http.test.arch.network | head -5
-nc -zv titan-public-tcp.test.arch.network 3030
-
-# Check firewall
-sudo ufw status
+# Test service connectivity
+curl -s http://127.0.0.1:3030/status | jq .        # Titan API
+curl -s -X POST -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"get_block_count","params":[],"id":1}' http://127.0.0.1:9002/  # Validator RPC
 ```
 
-**Solutions**:
-1. **Firewall**: `validator-up` refreshes firewall rules
-2. **Port conflicts**: Check if port 9002 is used by other services
-3. **Network**: Verify internet connectivity and DNS resolution
-4. **Restart**: `validator-down && validator-up`
+## Binary Management
 
-### Identity/Backup Issues
-**Symptoms**: Identity deployment failures, backup errors
-
-**Diagnosis**:
+### Production Updates
 ```bash
-# Check identity files
-sudo -u testnet-validator find /home/testnet-validator/data/ -name "*identity*"
+# Update to latest releases
+sync-arch-bins
+sync-bitcoin-bins
+sync-titan-bins
 
-# Check backups
-ls -la ~/.valops/age/identity-backup-*
-
-# Verify age keys
-ls -la ~/.valops/age/
+# Restart services in dependency order
+validator-down && titan-down && bitcoin-down
+bitcoin-up && titan-up && validator-up
 ```
 
-**Solutions**:
-1. **Restore from backup**: `VALIDATOR_ENCRYPTED_IDENTITY_KEY=~/.valops/age/identity-backup-{peer-id}.age validator-init`
-2. **Re-generate identity**: See [IDENTITY-GENERATION.md](IDENTITY-GENERATION.md)
-3. **Age key issues**: `setup-age-keys` to recreate
+### Development Updates
+```bash
+# VM-built binaries (requires multipass dev-env)
+SYNC_STRATEGY_ARCH=vm sync-arch-bins
+SYNC_STRATEGY_BITCOIN=vm sync-bitcoin-bins
+sync-titan-bins
+
+# Restart services
+validator-down && titan-down && bitcoin-down
+bitcoin-up && titan-up && validator-up
+```
 
 ## Emergency Procedures
 
-### Complete Validator Removal
+### Complete Infrastructure Reset
 ```bash
-# WARNING: Creates automatic backup before destruction
-validator-down --clobber
+# Stop all services and remove all data (WITH BACKUPS)
+validator-down --clobber     # Auto-backup before removal
+titan-down --clobber         # Auto-backup before removal
+bitcoin-down --clobber       # Auto-backup before removal
 
-# This will:
-# 1. Backup all identities to ~/.valops/age/
-# 2. Stop validator process
-# 3. Remove user and all data
-# 4. Show 3-second abort window
+# Rebuild from scratch
+bitcoin-up && titan-up && VALIDATOR_ENCRYPTED_IDENTITY_KEY=backup.age validator-init && validator-up
 ```
 
-### Disaster Recovery
+### Service Recovery
 ```bash
-# Restore from backup
-VALIDATOR_ENCRYPTED_IDENTITY_KEY=~/.valops/age/identity-backup-{peer-id}.age validator-init
+# Restart individual services
+systemctl restart arch-bitcoind@testnet-bitcoin
+systemctl restart arch-titan@testnet-titan
+systemctl restart arch-validator@testnet-validator
 
-# Restart operations
-validator-up && validator-dashboard
+# Or use management commands
+bitcoin-down && bitcoin-up
+titan-down && titan-up
+validator-down && validator-up
 ```
 
-### Emergency Contacts
-- **Logs**: `/home/testnet-validator/logs/validator.log`
-- **Configs**: `validators/testnet/.envrc`
-- **Backups**: `~/.valops/age/identity-backup-*`
-- **Full troubleshooting**: See legacy docs in `docs/legacy/` for detailed debugging
+**Need more help?** Check service logs with `journalctl -u <service-name> -f` for real-time troubleshooting.
 
 ---
 
