@@ -16,15 +16,15 @@ EnvironmentFile=/home/%i/titan.env
 ExecStart=/usr/local/bin/titan \
     --bitcoin-rpc-username ${BITCOIN_RPC_USER} \
     --bitcoin-rpc-password ${BITCOIN_RPC_PASSWORD} \
+    --bitcoin-rpc-url ${BITCOIN_RPC_URL} \
     --chain ${TITAN_NETWORK_MODE} \
     --data-dir /home/%i/data \
     --http-listen 0.0.0.0:3030 \
     --enable-file-logging \
     --bitcoin-rpc-limit 12 \
     --bitcoin-rpc-pool-size 500 \
-    --commit-interval 500 \
+    --commit-interval 5 \
     --main-loop-interval 500 \
-    --enable-zmq-listener \
     --index-bitcoin-transactions
 
 # Automatic restart on failure
@@ -32,9 +32,9 @@ Restart=always
 RestartSec=10
 StartLimitInterval=0
 
-# Logging
-StandardOutput=append:/home/%i/logs/titan.log
-StandardError=append:/home/%i/logs/titan.log
+# Logging via journalctl (systemd best practice)
+StandardOutput=journal
+StandardError=journal
 
 # Resource limits
 LimitNOFILE=65536

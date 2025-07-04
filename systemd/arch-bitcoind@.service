@@ -27,7 +27,7 @@ LimitNOFILE=65536
 # Security hardening
 NoNewPrivileges=true
 PrivateTmp=true
-ProtectSystem=strict
+ProtectSystem=full
 ReadWritePaths=/home/%i
 # ProtectHome=tmpfs  # Conflicts with ReadWritePaths - disabled for now
 
