@@ -18,80 +18,79 @@ log_echo() {
     echo "bitcoin-up: $@"
 }
 
-# Declare desired state
-declare_bitcoin_state() {
-    # Initialize from environment variables (no defaults - envrc handles those)
-    BITCOIN_USER="${BITCOIN_USER:-}"
-    BITCOIN_NETWORK_MODE="${BITCOIN_NETWORK_MODE:-}"
+# Usage information
+usage() {
+    cat <<EOF
+Usage: $(basename "$0") [OPTIONS]
 
-    # Parse command line arguments (override environment variables)
-    while [[ $# -gt 0 ]]; do
-        case $1 in
-        --user)
-            BITCOIN_USER="$2"
-            shift 2
-            ;;
-        --network)
-            BITCOIN_NETWORK_MODE="$2"
-            shift 2
-            ;;
-        -h | --help)
-            echo "Usage: bitcoin-up [options]"
-            echo ""
-            echo "Environment Variables (recommended):"
-            echo "  BITCOIN_USER                     Bitcoin user account"
-            echo "  BITCOIN_NETWORK_MODE             Network (testnet|mainnet|regtest|signet)"
-            echo ""
-            echo "Options (override environment variables):"
-            echo "  --user <username>                Bitcoin user account"
-            echo "  --network <network>              Network mode"
-            echo "  -h, --help                       Show this help"
-            exit 0
-            ;;
-        *)
-            log_error "Unknown option: $1"
-            exit 1
-            ;;
-        esac
-    done
+Ensures Bitcoin infrastructure exists and starts the Bitcoin service.
 
-    # Validate required parameters
-    if [[ -z "$BITCOIN_USER" ]]; then
-        log_error "BITCOIN_USER environment variable or --user flag is required"
-        echo "Usage: BITCOIN_USER=testnet-bitcoin bitcoin-up"
-        echo "   or: bitcoin-up --user testnet-bitcoin"
-        exit 1
-    fi
+Options:
+    -h, --help      Show this help message
 
-    if [[ -z "$BITCOIN_NETWORK_MODE" ]]; then
-        log_error "BITCOIN_NETWORK_MODE environment variable or --network flag is required"
-        echo "Set in envrc or pass --network (testnet|mainnet|regtest|signet)"
-        exit 1
-    fi
+Environment Variables (set by .envrc):
+    BITCOIN_USER            Username for Bitcoin service
+    BITCOIN_DATA_DIR        Directory for Bitcoin blockchain data
+    BITCOIN_NETWORK_MODE    Network mode (mainnet, testnet, regtest, etc.)
+    BITCOIN_PRUNE_SIZE      Pruning size in MB (0 or false to disable)
+    BITCOIN_RPC_USER        RPC username
+    BITCOIN_RPC_PASSWORD    RPC password
 
-    log_echo "Desired state: user=$BITCOIN_USER, network=$BITCOIN_NETWORK_MODE"
+Examples:
+    $(basename "$0")                    # Start with default configuration
+
+EOF
 }
 
 # Ensure all infrastructure exists and is current
 ensure_bitcoin_infrastructure() {
+    local bitcoin_user="$1"
+    local bitcoin_network_mode="$2"
+    local bitcoin_prune_size="$3"
+    local bitcoin_data_dir="$4"
+
     log_echo "Ensuring Bitcoin infrastructure exists and is current..."
 
     # Core infrastructure
-    create_user "$BITCOIN_USER"
-    ensure_service_directories "$BITCOIN_USER" "data" "logs"
+    create_user "$bitcoin_user"
+
+    # Handle data directory
+    ensure_bitcoin_data_directory "$bitcoin_user" "$bitcoin_data_dir"
+
+    # Standard directories (logs always in home)
+    ensure_service_directories "$bitcoin_user" "logs"
 
     # Service management
     ensure_systemd_service_unit_installed "arch-bitcoind@"
 
-    # Configuration (reuse existing function)
-    ensure_bitcoin_configuration_current "$BITCOIN_USER" "$BITCOIN_NETWORK_MODE" "${BITCOIN_PRUNE_SIZE:-}"
+    # Configuration (pass data directory)
+    ensure_bitcoin_configuration_current "$bitcoin_user" "$bitcoin_network_mode" "$bitcoin_prune_size" "$bitcoin_data_dir"
 
     # Operational concerns
-    ensure_logrotate_enabled "$BITCOIN_USER" "bitcoin"
-    ensure_bitcoin_p2p_enabled "$BITCOIN_USER" "$BITCOIN_NETWORK_MODE"
-    apply_knots_banlist "$BITCOIN_USER"
+    ensure_logrotate_enabled "$bitcoin_user" "bitcoin"
+    ensure_bitcoin_p2p_enabled "$bitcoin_user" "$bitcoin_network_mode"
+    apply_knots_banlist "$bitcoin_user"
 
     log_echo "✓ Bitcoin infrastructure is current"
+}
+
+# Ensure Bitcoin data directory exists with proper permissions
+ensure_bitcoin_data_directory() {
+    local username="$1"
+    local data_dir="$2"
+
+    log_echo "Ensuring Bitcoin data directory: $data_dir"
+
+    # Create directory if it doesn't exist
+    if [[ ! -d "$data_dir" ]]; then
+        sudo mkdir -p "$data_dir"
+        log_echo "✓ Created data directory: $data_dir"
+    fi
+
+    # Set proper ownership and permissions
+    sudo chown "$username:$username" "$data_dir"
+    sudo chmod 750 "$data_dir"
+    log_echo "✓ Set permissions for $data_dir"
 }
 
 # Ensure configuration file is current
@@ -99,13 +98,20 @@ ensure_bitcoin_configuration_current() {
     local username="$1"
     local network_mode="$2"
     local prune_size="$3"
+    local data_dir="$4"
     local config_file="/home/$username/bitcoin.conf"
+
+    # Validate required parameters
+    if [[ -z "$data_dir" ]]; then
+        log_error "data_dir parameter is required"
+        return 1
+    fi
 
     # Generate current config and compare
     local temp_config=$(mktemp)
     trap "rm -f '$temp_config'" EXIT
 
-    generate_bitcoin_config "$username" "$network_mode" "$prune_size" >"$temp_config"
+    generate_bitcoin_config "$username" "$network_mode" "$prune_size" "$data_dir" >"$temp_config"
 
     # Update if different or missing
     if [[ ! -f "$config_file" ]] || ! cmp -s "$temp_config" "$config_file" 2>/dev/null; then
@@ -119,7 +125,8 @@ ensure_bitcoin_configuration_current() {
 
 # Ensure service is running and healthy
 ensure_service_running() {
-    local service_name="arch-bitcoind@$BITCOIN_USER"
+    local bitcoin_user="$1"
+    local service_name="arch-bitcoind@$bitcoin_user"
 
     # Start service if not running
     if ! is_systemd_service_running "$service_name"; then
@@ -131,11 +138,11 @@ ensure_service_running() {
     fi
 
     # Wait for RPC to be ready
-    local rpc_check="sudo -u $BITCOIN_USER bitcoin-cli -conf=/home/$BITCOIN_USER/bitcoin.conf getblockchaininfo"
+    local rpc_check="sudo -u $bitcoin_user bitcoin-cli -conf=/home/$bitcoin_user/bitcoin.conf getblockchaininfo"
     wait_for_service_ready "$service_name" "$rpc_check" 30
 
     # Verify health
-    verify_bitcoin_healthy "$BITCOIN_USER"
+    verify_bitcoin_healthy "$bitcoin_user"
 }
 
 # Verify service is healthy and report status
@@ -164,11 +171,50 @@ verify_bitcoin_healthy() {
 
 # Main execution: IaC pattern
 main() {
-    declare_bitcoin_state "$@"
-    ensure_bitcoin_infrastructure
-    ensure_service_running
+    # Parse command line arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+        -h | --help)
+            usage
+            exit 0
+            ;;
+        *)
+            log_error "Unknown option: $1"
+            usage
+            exit 1
+            ;;
+        esac
+    done
 
-    log_echo "✓ Bitcoin Core infrastructure is ready and running"
+    # Validate required environment variables
+    local missing_vars=()
+
+    [[ -z "${BITCOIN_USER:-}" ]] && missing_vars+=("BITCOIN_USER")
+    [[ -z "${BITCOIN_DATA_DIR:-}" ]] && missing_vars+=("BITCOIN_DATA_DIR")
+    [[ -z "${BITCOIN_NETWORK_MODE:-}" ]] && missing_vars+=("BITCOIN_NETWORK_MODE")
+    [[ -z "${BITCOIN_RPC_USER:-}" ]] && missing_vars+=("BITCOIN_RPC_USER")
+    [[ -z "${BITCOIN_RPC_PASSWORD:-}" ]] && missing_vars+=("BITCOIN_RPC_PASSWORD")
+
+    if [[ ${#missing_vars[@]} -gt 0 ]]; then
+        log_error "Missing required environment variables: ${missing_vars[*]}"
+        log_error "These should be set by .envrc - ensure direnv is working"
+        usage
+        exit 1
+    fi
+
+    # Log configuration
+    log_echo "Bitcoin service configuration:"
+    log_echo "  User: $BITCOIN_USER"
+    log_echo "  Data directory: $BITCOIN_DATA_DIR"
+    log_echo "  Network: $BITCOIN_NETWORK_MODE"
+    log_echo "  Pruning: ${BITCOIN_PRUNE_SIZE:-disabled}"
+
+    # Execute infrastructure setup with explicit parameters
+    ensure_bitcoin_infrastructure "$BITCOIN_USER" "$BITCOIN_NETWORK_MODE" "${BITCOIN_PRUNE_SIZE:-}" "$BITCOIN_DATA_DIR"
+    ensure_service_running "$BITCOIN_USER"
+
+    # Auto-backup after successful start
+    "$PROJECT_ROOT/bin/backup-all"
 }
 
 # Execute main function with all arguments
